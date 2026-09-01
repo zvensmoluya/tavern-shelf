@@ -37,6 +37,11 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 	}
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		desktopStatus := map[string]any{"available": desktop != nil, "autoStart": false}
+		inboxes := application.Inboxes()
+		inboxDetails := make([]map[string]string, 0, len(inboxes))
+		for _, directory := range inboxes {
+			inboxDetails = append(inboxDetails, map[string]string{"path": directory, "mode": application.InboxMode(directory)})
+		}
 		if desktop != nil {
 			enabled, err := desktop.AutoStartEnabled()
 			if err == nil {
@@ -46,7 +51,7 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 		writeJSON(w, http.StatusOK, map[string]any{
 			"scanner": application.Scanner.Status(),
 			"paths": map[string]any{
-				"inbox": application.Paths.Inbox, "inboxes": application.Inboxes(),
+				"inbox": application.Paths.Inbox, "inboxes": inboxes, "inboxDetails": inboxDetails,
 				"library": application.Paths.Library, "appData": application.Paths.AppData, "trash": application.Paths.Trash,
 			},
 			"desktop": desktopStatus,

@@ -108,6 +108,9 @@ func TestInboxDirectoriesPersistAcrossRestart(t *testing.T) {
 	if len(directories) != 2 || directories[1] != external {
 		t.Fatalf("Inbox settings were not restored: %#v", directories)
 	}
+	if reopened.InboxMode(directories[0]) != "move" || reopened.InboxMode(external) != "copy" {
+		t.Fatalf("unexpected Inbox modes: default=%q external=%q", reopened.InboxMode(directories[0]), reopened.InboxMode(external))
+	}
 	if err := reopened.RemoveInbox(context.Background(), directories[0]); err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 type Config struct {
 	Inbox        string
 	Inboxes      []string
+	ManagedInbox string
 	Interval     time.Duration
 	StableFor    time.Duration
 	RetryAfter   time.Duration
@@ -42,10 +44,12 @@ type observation struct {
 	modified    int64
 	stableSince time.Time
 	nextRetry   time.Time
+	imported    bool
 }
 
 type Scanner struct {
 	inboxes      []string
+	managedInbox string
 	interval     time.Duration
 	stableFor    time.Duration
 	retryAfter   time.Duration
@@ -75,8 +79,12 @@ func New(config Config) *Scanner {
 	if len(inboxes) == 0 && config.Inbox != "" {
 		inboxes = []string{config.Inbox}
 	}
+	managedInbox := config.ManagedInbox
+	if managedInbox == "" && config.Inbox != "" {
+		managedInbox = config.Inbox
+	}
 	return &Scanner{
-		inboxes: inboxes, interval: config.Interval, stableFor: config.StableFor,
+		inboxes: inboxes, managedInbox: managedInbox, interval: config.Interval, stableFor: config.StableFor,
 		retryAfter: config.RetryAfter, importer: config.Import, logger: config.Logger,
 		onLibraryHit: config.OnLibraryHit, observations: make(map[string]observation),
 	}
@@ -142,17 +150,27 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 			continue
 		}
 		seen[path] = struct{}{}
-		pending++
 		obs, ok := s.getObservation(path)
 		fingerprintChanged := !ok || obs.size != info.Size() || obs.modified != info.ModTime().UnixNano()
 		if fingerprintChanged {
 			s.setObservation(path, observation{size: info.Size(), modified: info.ModTime().UnixNano(), stableSince: now})
+			pending++
 			continue
 		}
+		if obs.imported {
+			continue
+		}
+		pending++
 		if now.Before(obs.nextRetry) || now.Sub(obs.stableSince) < s.stableFor {
 			continue
 		}
-		result, err := s.importer.ImportFrom(ctx, inbox, path)
+		moveSource := samePath(inbox, s.managedInbox)
+		var result importer.Result
+		if moveSource {
+			result, err = s.importer.Import(ctx, path)
+		} else {
+			result, err = s.importer.ImportFrom(ctx, inbox, path)
+		}
 		if err != nil {
 			obs.nextRetry = now.Add(s.retryAfter)
 			s.setObservation(path, obs)
@@ -160,7 +178,12 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 			s.logger.Warn("character import failed", "file", entry.Name(), "error", err, "retry_at", obs.nextRetry)
 			continue
 		}
-		s.deleteObservation(path)
+		if moveSource {
+			s.deleteObservation(path)
+		} else {
+			obs.imported = true
+			s.setObservation(path, obs)
+		}
 		pending--
 		s.recordImport(now)
 		if result.Duplicate {
@@ -173,6 +196,18 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 		}
 	}
 	return pending, nil
+}
+
+func samePath(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 func (s *Scanner) Inboxes() []string {

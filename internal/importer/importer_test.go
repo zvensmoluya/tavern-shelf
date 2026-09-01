@@ -93,11 +93,38 @@ func TestImportFromConfiguredExternalInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(source); !os.IsNotExist(err) {
-		t.Fatalf("external Inbox source still exists after import: %v", err)
+	if raw, err := os.ReadFile(source); err != nil || string(raw) != validCard {
+		t.Fatalf("external scan source was changed: %q, %v", raw, err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Library, result.Character.SourceRelPath)); err != nil {
 		t.Fatalf("managed source missing: %v", err)
+	}
+}
+
+func TestExternalDuplicateRemainsAtSource(t *testing.T) {
+	imp, p, _ := testImporter(t)
+	managedSource := filepath.Join(p.Inbox, "managed.json")
+	if err := os.WriteFile(managedSource, []byte(validCard), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := imp.Import(context.Background(), managedSource); err != nil {
+		t.Fatal(err)
+	}
+	external := t.TempDir()
+	duplicate := filepath.Join(external, "duplicate.json")
+	if err := os.WriteFile(duplicate, []byte(validCard), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := imp.ImportFrom(context.Background(), external, duplicate)
+	if err != nil || !result.Duplicate {
+		t.Fatalf("external duplicate result = %#v, %v", result, err)
+	}
+	if _, err := os.Stat(duplicate); err != nil {
+		t.Fatalf("external duplicate was removed: %v", err)
+	}
+	duplicates, err := os.ReadDir(p.Duplicate)
+	if err != nil || len(duplicates) != 0 {
+		t.Fatalf("external duplicate was archived: %v, %v", duplicates, err)
 	}
 }
 

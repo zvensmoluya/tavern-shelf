@@ -38,7 +38,11 @@ func TestInboxDirectoryAPI(t *testing.T) {
 	}
 	var status struct {
 		Paths struct {
-			Inboxes []string `json:"inboxes"`
+			Inboxes      []string `json:"inboxes"`
+			InboxDetails []struct {
+				Path string `json:"path"`
+				Mode string `json:"mode"`
+			} `json:"inboxDetails"`
 		} `json:"paths"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
@@ -46,6 +50,9 @@ func TestInboxDirectoryAPI(t *testing.T) {
 	}
 	if len(status.Paths.Inboxes) != 2 || status.Paths.Inboxes[1] != external {
 		t.Fatalf("unexpected Inbox status: %#v", status.Paths.Inboxes)
+	}
+	if len(status.Paths.InboxDetails) != 2 || status.Paths.InboxDetails[0].Mode != "move" || status.Paths.InboxDetails[1].Mode != "copy" {
+		t.Fatalf("unexpected Inbox modes: %#v", status.Paths.InboxDetails)
 	}
 
 	requestJSON(t, handler, http.MethodDelete, "/api/inboxes", map[string]string{"path": shelf.Paths.Inbox}, http.StatusNoContent)

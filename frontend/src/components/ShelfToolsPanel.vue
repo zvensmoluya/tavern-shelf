@@ -30,14 +30,18 @@ defineEmits<{
             <span class="text-[9px] font-semibold tracking-[.12em]">INBOX</span>
           </div>
           <div v-if="status" class="mb-3 space-y-2">
-            <div v-for="path in status.paths.inboxes" :key="path" class="flex items-center gap-1.5 rounded-lg border border-shelf-line bg-black/10 px-2 py-1.5">
-              <button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-[9px] leading-5 text-shelf-muted hover:text-shelf-text-soft" :title="path" :disabled="busy" @click="$emit('openInbox', path)">{{ path }}</button>
-              <ShelfIconButton :icon="FolderOpen" :label="status.desktop.available ? '打开目录' : '复制路径'" :size="14" class="size-7 shrink-0 border-transparent bg-transparent" :disabled="busy" @click="$emit('openInbox', path)" />
-              <ShelfIconButton :icon="FolderMinus" label="停止扫描此目录" :size="13" class="size-7 shrink-0 border-transparent bg-transparent text-shelf-muted hover:text-shelf-danger" :disabled="busy || status.paths.inboxes.length <= 1" @click="$emit('removeInbox', path)" />
+            <div v-for="inbox in status.paths.inboxDetails" :key="inbox.path" class="rounded-lg border border-shelf-line bg-black/10 px-2 py-1.5">
+              <div class="flex items-center gap-1.5">
+                <button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-[9px] leading-5 text-shelf-muted hover:text-shelf-text-soft" :title="inbox.path" :disabled="busy" @click="$emit('openInbox', inbox.path)">{{ inbox.path }}</button>
+                <ShelfIconButton :icon="FolderOpen" :label="status.desktop.available ? '打开目录' : '复制路径'" :size="14" class="size-7 shrink-0 border-transparent bg-transparent" :disabled="busy" @click="$emit('openInbox', inbox.path)" />
+                <ShelfIconButton :icon="FolderMinus" label="停止扫描此目录" :size="13" class="size-7 shrink-0 border-transparent bg-transparent text-shelf-muted hover:text-shelf-danger" :disabled="busy || status.paths.inboxes.length <= 1" @click="$emit('removeInbox', inbox.path)" />
+              </div>
+              <span class="ml-0.5 inline-flex rounded px-1.5 py-0.5 text-[8px]" :class="inbox.mode === 'move' ? 'bg-amber-300/10 text-amber-200/70' : 'bg-shelf-success/10 text-shelf-success/75'">{{ inbox.mode === "move" ? "收录后搬入 Shelf" : "只复制 · 保留源文件" }}</span>
             </div>
           </div>
           <p v-else class="mb-3 text-[10px] text-shelf-muted">正在读取路径…</p>
           <ShelfButton :icon="FolderPlus" :disabled="busy || !status" @click="$emit('addInbox')">添加扫描目录</ShelfButton>
+          <p class="mt-2 text-[9px] leading-5 text-shelf-quiet">默认 Inbox 会在成功收录后搬入 Shelf；额外目录只扫描并复制，原文件始终保留。</p>
         </section>
 
         <section v-if="status?.desktop.available" class="border-b border-shelf-line p-4">

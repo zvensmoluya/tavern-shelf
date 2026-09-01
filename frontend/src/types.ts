@@ -155,7 +155,14 @@ export interface TransferSession {
 }
 
 export interface ShelfStatus {
-  paths: { inbox: string; inboxes: string[]; library: string; appData: string; trash: string };
+  paths: {
+    inbox: string;
+    inboxes: string[];
+    inboxDetails: Array<{ path: string; mode: "move" | "copy" }>;
+    library: string;
+    appData: string;
+    trash: string;
+  };
   desktop: { available: boolean; autoStart: boolean };
   scanner: { running: boolean; pending: number; lastError?: string; lastErrorFile?: string };
 }

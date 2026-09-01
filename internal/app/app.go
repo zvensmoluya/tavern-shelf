@@ -68,7 +68,7 @@ func Open(options Options) (*App, error) {
 	}
 	imp := importer.New(p, s)
 	scan := scanner.New(scanner.Config{
-		Inboxes: inboxes, Interval: options.ScanInterval, StableFor: options.StableFor,
+		Inboxes: inboxes, ManagedInbox: p.Inbox, Interval: options.ScanInterval, StableFor: options.StableFor,
 		RetryAfter: options.RetryAfter, Import: imp, Logger: options.Logger,
 		OnLibraryHit: options.OnLibraryHit,
 	})
@@ -91,6 +91,13 @@ func (a *App) Close() error {
 }
 
 func (a *App) Inboxes() []string { return a.Scanner.Inboxes() }
+
+func (a *App) InboxMode(directory string) string {
+	if samePath(directory, a.Paths.Inbox) {
+		return "move"
+	}
+	return "copy"
+}
 
 func (a *App) AddInbox(ctx context.Context, directory string) error {
 	a.inboxMu.Lock()

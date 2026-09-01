@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -113,12 +114,19 @@ func TestParseJSONV3StandardFields(t *testing.T) {
 }
 
 func TestParseJSONV1(t *testing.T) {
-	character, err := ParseJSON(bytes.NewBufferString(`{"name":"Old Friend","creator":"Anon","tags":["v1"]}`))
+	character, err := ParseJSON(bytes.NewBufferString(`{"name":"Old Friend","creator":"Anon","description":"A long-time companion.","tags":["v1"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if character.Name != "Old Friend" || character.SourceFormat != "json" {
 		t.Fatalf("unexpected card: %#v", character)
+	}
+}
+
+func TestParseJSONRejectsNamedAccountData(t *testing.T) {
+	raw := `{"name":"Michael Smith","email":"michael@example.com","access_token":"secret","refresh_token":"secret","plan_type":"plus"}`
+	if _, err := ParseJSON(bytes.NewBufferString(raw)); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("named account JSON error = %v, want ErrUnsupported", err)
 	}
 }
 

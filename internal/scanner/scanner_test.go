@@ -94,7 +94,7 @@ func TestScannerImportsFromMultipleInboxes(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 	second := t.TempDir()
 	scan := New(Config{
-		Inboxes: []string{p.Inbox, second}, StableFor: time.Second, RetryAfter: time.Hour,
+		Inboxes: []string{p.Inbox, second}, ManagedInbox: p.Inbox, StableFor: time.Second, RetryAfter: time.Hour,
 		Import: importer.New(p, s), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	cards := map[string]string{
@@ -116,6 +116,19 @@ func TestScannerImportsFromMultipleInboxes(t *testing.T) {
 	characters, err := s.List(context.Background())
 	if err != nil || len(characters) != 2 {
 		t.Fatalf("multiple Inbox import mismatch: %#v, %v", characters, err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Inbox, "first.json")); !os.IsNotExist(err) {
+		t.Fatalf("Shelf-owned Inbox source was not moved: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(second, "second.json")); err != nil {
+		t.Fatalf("external scan source was removed: %v", err)
+	}
+	if err := scan.ScanOnce(context.Background(), t0.Add(4*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	characters, err = s.List(context.Background())
+	if err != nil || len(characters) != 2 || scan.Status().Pending != 0 {
+		t.Fatalf("unchanged external source was reprocessed: %#v, status=%#v, err=%v", characters, scan.Status(), err)
 	}
 }
 

@@ -132,7 +132,7 @@ async function addInbox() {
     if (!path) return;
     await api.addInbox(path);
     await loadStatus();
-    showNotice("已添加扫描目录");
+    showNotice("已添加扫描目录；源文件会保留在原处");
   } catch (error) {
     showNotice(`无法添加目录：${error instanceof Error ? error.message : "未知错误"}`, true);
   } finally {

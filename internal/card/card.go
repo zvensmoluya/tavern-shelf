@@ -166,6 +166,9 @@ func parseJSONBytes(raw []byte, format string, image bool) (Character, error) {
 	if strings.TrimSpace(data.Name) == "" {
 		return Character{}, errors.New("character card has no name")
 	}
+	if !image && !isCharacterEnvelope(env) && !hasLegacyCharacterFields(dataSource) {
+		return Character{}, fmt.Errorf("%w: named JSON does not contain character card fields", ErrUnsupported)
+	}
 	content := buildManifest(data, raw)
 	return Character{
 		Name:           content.Character.Name,
@@ -181,6 +184,26 @@ func parseJSONBytes(raw []byte, format string, image bool) (Character, error) {
 		SourceIsImage:  image,
 		Manifest:       content,
 	}, nil
+}
+
+func isCharacterEnvelope(env envelope) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(env.Spec)), "chara_card_")
+}
+
+func hasLegacyCharacterFields(raw []byte) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return false
+	}
+	for _, key := range []string{
+		"description", "personality", "scenario", "first_mes", "mes_example",
+		"alternate_greetings", "character_book", "system_prompt", "post_history_instructions",
+	} {
+		if _, ok := fields[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func buildManifest(data cardData, raw []byte) manifest.Content {

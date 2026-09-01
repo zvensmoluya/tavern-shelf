@@ -39,10 +39,17 @@ func New(p paths.Paths, s *store.Store) *Importer {
 }
 
 func (i *Importer) Import(ctx context.Context, source string) (Result, error) {
-	return i.ImportFrom(ctx, i.paths.Inbox, source)
+	return i.importFrom(ctx, i.paths.Inbox, source, true)
 }
 
+// ImportFrom imports from an external watched directory without changing the
+// source file. Only Import, which is restricted to Shelf's owned Inbox, moves
+// successfully handled sources into managed storage.
 func (i *Importer) ImportFrom(ctx context.Context, inbox, source string) (Result, error) {
+	return i.importFrom(ctx, inbox, source, false)
+}
+
+func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeSource bool) (Result, error) {
 	if err := ensureDirectChild(inbox, source); err != nil {
 		return Result{}, err
 	}
@@ -80,16 +87,20 @@ func (i *Importer) ImportFrom(ctx context.Context, inbox, source string) (Result
 		return Result{}, err
 	}
 	if existing, err := i.store.GetByHash(ctx, hash); err == nil {
-		if err := i.archiveDuplicate(source, hash); err != nil {
-			return Result{}, err
+		if removeSource {
+			if err := i.archiveDuplicate(source, hash); err != nil {
+				return Result{}, err
+			}
 		}
 		return Result{Character: existing, Kind: "character", Name: existing.Name, Duplicate: true}, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return Result{}, err
 	}
 	if existing, err := i.store.GetResourceByHash(ctx, hash); err == nil {
-		if err := i.archiveDuplicate(source, hash); err != nil {
-			return Result{}, err
+		if removeSource {
+			if err := i.archiveDuplicate(source, hash); err != nil {
+				return Result{}, err
+			}
 		}
 		return Result{Resource: existing, Kind: existing.Kind, Name: existing.Name, Duplicate: true}, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
@@ -167,10 +178,12 @@ func (i *Importer) ImportFrom(ctx context.Context, inbox, source string) (Result
 		result = Result{Resource: resource, Kind: resource.Kind, Name: resource.Name}
 	}
 	committed = true
-	if err := os.Remove(source); err != nil {
-		// The managed copy and database row are complete. A later scan will identify
-		// this leftover as an exact duplicate and archive it safely.
-		return result, fmt.Errorf("remove imported inbox file: %w", err)
+	if removeSource {
+		if err := os.Remove(source); err != nil {
+			// The managed copy and database row are complete. A later scan will identify
+			// this leftover as an exact duplicate and archive it safely.
+			return result, fmt.Errorf("remove imported inbox file: %w", err)
+		}
 	}
 	if _, err := os.Stat(finalSource); err != nil {
 		return result, fmt.Errorf("verify managed source: %w", err)
