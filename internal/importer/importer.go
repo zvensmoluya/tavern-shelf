@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -34,7 +35,11 @@ func New(p paths.Paths, s *store.Store) *Importer {
 }
 
 func (i *Importer) Import(ctx context.Context, source string) (Result, error) {
-	if err := ensureDirectChild(i.paths.Inbox, source); err != nil {
+	return i.ImportFrom(ctx, i.paths.Inbox, source)
+}
+
+func (i *Importer) ImportFrom(ctx context.Context, inbox, source string) (Result, error) {
+	if err := ensureDirectChild(inbox, source); err != nil {
 		return Result{}, err
 	}
 	info, err := os.Stat(source)
@@ -183,12 +188,26 @@ func ensureDirectChild(parent, child string) error {
 	if err != nil {
 		return fmt.Errorf("resolve inbox: %w", err)
 	}
+	parentAbs, err = filepath.EvalSymlinks(parentAbs)
+	if err != nil {
+		return fmt.Errorf("resolve inbox links: %w", err)
+	}
 	childAbs, err := filepath.Abs(child)
 	if err != nil {
 		return fmt.Errorf("resolve inbox item: %w", err)
 	}
-	if filepath.Dir(childAbs) != parentAbs {
-		return errors.New("import source must be a direct child of the Inbox")
+	childAbs, err = filepath.EvalSymlinks(childAbs)
+	if err != nil {
+		return fmt.Errorf("resolve inbox item links: %w", err)
+	}
+	parentDir := filepath.Clean(parentAbs)
+	childDir := filepath.Clean(filepath.Dir(childAbs))
+	matches := parentDir == childDir
+	if runtime.GOOS == "windows" {
+		matches = strings.EqualFold(parentDir, childDir)
+	}
+	if !matches {
+		return errors.New("import source must be a direct child of a configured Inbox")
 	}
 	return nil
 }

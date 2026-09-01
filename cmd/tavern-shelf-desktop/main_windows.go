@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	actions := desktop.Actions{Inbox: shelf.Paths.Inbox}
+	actions := &desktop.Actions{}
 	handler, err := httpapi.Handler(shelf, actions)
 	if err != nil {
 		_ = shelf.Close()
@@ -80,6 +80,20 @@ func main() {
 		MinWidth: 760, MinHeight: 560, URL: "/", Hidden: *background,
 		BackgroundColour: application.NewRGB(13, 15, 18),
 	})
+	actions.ChooseInboxFunc = func() (string, error) {
+		initial := shelf.Paths.Inbox
+		if directories := shelf.Inboxes(); len(directories) > 0 {
+			initial = directories[0]
+		}
+		return wailsApp.Dialog.OpenFile().
+			CanChooseFiles(false).
+			CanChooseDirectories(true).
+			CanCreateDirectories(true).
+			AttachToWindow(window).
+			SetTitle("选择要自动扫描的目录").
+			SetDirectory(initial).
+			PromptForSingleSelection()
+	}
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		window.Hide()
 		event.Cancel()
@@ -91,7 +105,11 @@ func main() {
 	tray.OnClick(func() { showWindow(window) })
 	menu := wailsApp.NewMenu()
 	menu.Add("打开 Tavern Shelf").OnClick(func(*application.Context) { showWindow(window) })
-	menu.Add("打开 Inbox").OnClick(func(*application.Context) { _ = actions.OpenInbox() })
+	menu.Add("打开 Inbox").OnClick(func(*application.Context) {
+		if directories := shelf.Inboxes(); len(directories) > 0 {
+			_ = actions.OpenInbox(directories[0])
+		}
+	})
 	menu.AddSeparator()
 	autoStart, _ := actions.AutoStartEnabled()
 	menu.AddCheckbox("登录后静默启动", autoStart).OnClick(func(ctx *application.Context) {

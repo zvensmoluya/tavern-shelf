@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,14 +18,21 @@ const (
 )
 
 type Actions struct {
-	Inbox string
+	ChooseInboxFunc func() (string, error)
 }
 
-func (a Actions) OpenInbox() error {
-	if err := exec.Command("explorer.exe", a.Inbox).Start(); err != nil {
+func (a Actions) OpenInbox(path string) error {
+	if err := exec.Command("explorer.exe", path).Start(); err != nil {
 		return fmt.Errorf("open Inbox in Explorer: %w", err)
 	}
 	return nil
+}
+
+func (a Actions) ChooseInbox() (string, error) {
+	if a.ChooseInboxFunc == nil {
+		return "", errors.New("Inbox directory picker is not ready")
+	}
+	return a.ChooseInboxFunc()
 }
 
 func (a Actions) AutoStartEnabled() (bool, error) {

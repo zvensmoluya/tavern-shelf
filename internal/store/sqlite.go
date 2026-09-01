@@ -64,12 +64,56 @@ CREATE TABLE IF NOT EXISTS characters (
     manifest_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_characters_imported_at ON characters(imported_at DESC);
+CREATE TABLE IF NOT EXISTS inbox_directories (
+    path TEXT PRIMARY KEY,
+    position INTEGER NOT NULL
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate library database: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, "ALTER TABLE characters ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'"); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return fmt.Errorf("add content manifest column: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) InboxDirectories(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT path FROM inbox_directories ORDER BY position, path")
+	if err != nil {
+		return nil, fmt.Errorf("list Inbox directories: %w", err)
+	}
+	defer rows.Close()
+	directories := make([]string, 0)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, fmt.Errorf("scan Inbox directory: %w", err)
+		}
+		directories = append(directories, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate Inbox directories: %w", err)
+	}
+	return directories, nil
+}
+
+func (s *Store) ReplaceInboxDirectories(ctx context.Context, directories []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin Inbox settings update: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "DELETE FROM inbox_directories"); err != nil {
+		return fmt.Errorf("clear Inbox settings: %w", err)
+	}
+	for position, directory := range directories {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO inbox_directories (path, position) VALUES (?, ?)", directory, position); err != nil {
+			return fmt.Errorf("save Inbox directory %q: %w", directory, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit Inbox settings: %w", err)
 	}
 	return nil
 }

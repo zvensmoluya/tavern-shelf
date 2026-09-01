@@ -18,7 +18,8 @@ import (
 )
 
 type DesktopActions interface {
-	OpenInbox() error
+	OpenInbox(path string) error
+	ChooseInbox() (string, error)
 	AutoStartEnabled() (bool, error)
 	SetAutoStart(enabled bool) error
 }
@@ -41,14 +42,63 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 				desktopStatus["autoStart"] = enabled
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"scanner": application.Scanner.Status(), "paths": application.Paths, "desktop": desktopStatus})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"scanner": application.Scanner.Status(),
+			"paths": map[string]any{
+				"inbox": application.Paths.Inbox, "inboxes": application.Inboxes(),
+				"library": application.Paths.Library, "appData": application.Paths.AppData, "trash": application.Paths.Trash,
+			},
+			"desktop": desktopStatus,
+		})
+	})
+	mux.HandleFunc("POST /api/inboxes", func(w http.ResponseWriter, r *http.Request) {
+		path, ok := decodeDirectory(w, r)
+		if !ok {
+			return
+		}
+		if err := application.AddInbox(r.Context(), path); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("DELETE /api/inboxes", func(w http.ResponseWriter, r *http.Request) {
+		path, ok := decodeDirectory(w, r)
+		if !ok {
+			return
+		}
+		if err := application.RemoveInbox(r.Context(), path); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/desktop/choose-inbox", func(w http.ResponseWriter, r *http.Request) {
+		if desktop == nil {
+			writeError(w, http.StatusNotImplemented, errors.New("desktop integration is not available in headless mode"))
+			return
+		}
+		path, err := desktop.ChooseInbox()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"path": path})
 	})
 	mux.HandleFunc("POST /api/desktop/open-inbox", func(w http.ResponseWriter, r *http.Request) {
 		if desktop == nil {
 			writeError(w, http.StatusNotImplemented, errors.New("desktop integration is not available in headless mode"))
 			return
 		}
-		if err := desktop.OpenInbox(); err != nil {
+		path, ok := decodeDirectory(w, r)
+		if !ok {
+			return
+		}
+		if !application.HasInbox(path) {
+			writeError(w, http.StatusBadRequest, errors.New("Inbox directory is not configured"))
+			return
+		}
+		if err := desktop.OpenInbox(path); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -137,6 +187,17 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 		_, _ = w.Write(index)
 	})
 	return securityHeaders(mux), nil
+}
+
+func decodeDirectory(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var request struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || strings.TrimSpace(request.Path) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("valid Inbox directory path is required"))
+		return "", false
+	}
+	return request.Path, true
 }
 
 func securityHeaders(next http.Handler) http.Handler {

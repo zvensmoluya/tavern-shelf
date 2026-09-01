@@ -103,7 +103,7 @@ export interface Character {
 }
 
 export interface ShelfStatus {
-  paths: { inbox: string };
+  paths: { inbox: string; inboxes: string[]; library: string; appData: string; trash: string };
   desktop: { available: boolean; autoStart: boolean };
   scanner: { running: boolean; pending: number; lastError?: string; lastErrorFile?: string };
 }

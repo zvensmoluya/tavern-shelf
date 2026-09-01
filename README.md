@@ -1,6 +1,6 @@
 # Tavern Shelf
 
-Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 角色卡放进明确的 Inbox 后，Shelf 会等待文件写入稳定、解析卡片、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。
+Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 角色卡放进任一已配置的 Inbox 后，Shelf 会等待文件写入稳定、解析卡片、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。
 
 当前仓库已经包含 V0 的第一条完整纵向路径：
 
@@ -13,7 +13,7 @@ Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单
 
 ## 本地运行
 
-需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22 与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。
+需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22.12 或更新版本与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。
 
 Headless 模式：
 
@@ -56,7 +56,7 @@ Shelf 只管理自己的根目录：
 
 ```text
 Tavern Shelf/
-├── Inbox/                 用户投递目录
+├── Inbox/                 默认用户投递目录
 ├── Library/               正式收录的原始 Source
 ├── Trash/                 UI 删除后的可恢复内容
 └── AppData/
@@ -67,6 +67,8 @@ Tavern Shelf/
 
 原始卡是 source of truth。数据库字段和 UI 数据都可以从 Source 重建。导入时 Shelf 会先解析原文件，再把它复制到暂存目录并核对 SHA-256；只有托管副本和数据库记录都成功后，才会移除 Inbox 中的文件。解析失败或仍在写入的文件会留在 Inbox。
 
+默认 Inbox 开箱即用，也可以在 Shelf 工具面板中添加多个现有目录。配置保存在 Shelf 数据库中并在重启后恢复；移除扫描目录只会停止监视，不会删除该目录或其中的文件。
+
 ## 当前支持
 
 - SillyTavern JSON Character Card，包括常见 v1 和 v2 外层结构；
@@ -74,6 +76,7 @@ Tavern Shelf/
 - PNG `tEXt/chara`、`tEXt/ccv3` 元数据，以及未压缩或 zlib 压缩的 `iTXt` 元数据；
 - 可重建的 Content Manifest：角色设定、开场与 alternate/group greetings、Character Book entry、Regex script 匹配信息、extension/asset 类型，以及 HTML、JavaScript 和已知交互扩展的存在性；
 - 内容哈希去重，同名但内容不同的卡片不会互相覆盖；
+- 可持久化配置多个 Inbox，并在运行中立即添加或移除扫描目录；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；
 - 轮询式稳定文件检测，坏文件使用冷却时间，避免高频错误循环。
 

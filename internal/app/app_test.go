@@ -85,3 +85,46 @@ func TestOpenRebuildsMissingContentManifest(t *testing.T) {
 		t.Fatalf("manifest was not rebuilt: %#v", character.Manifest)
 	}
 }
+
+func TestInboxDirectoriesPersistAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	shelf, err := Open(Options{DataDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := shelf.AddInbox(context.Background(), external); err != nil {
+		t.Fatal(err)
+	}
+	if err := shelf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(Options{DataDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	directories := reopened.Inboxes()
+	if len(directories) != 2 || directories[1] != external {
+		t.Fatalf("Inbox settings were not restored: %#v", directories)
+	}
+	if err := reopened.RemoveInbox(context.Background(), directories[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.RemoveInbox(context.Background(), external); err == nil {
+		t.Fatal("expected removing the final Inbox to fail")
+	}
+}
+
+func TestAddInboxRejectsManagedDirectories(t *testing.T) {
+	shelf, err := Open(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	for _, directory := range []string{shelf.Paths.Root, shelf.Paths.Library, shelf.Paths.AppData, shelf.Paths.Trash} {
+		if err := shelf.AddInbox(context.Background(), directory); err == nil {
+			t.Fatalf("expected managed directory %q to be rejected", directory)
+		}
+	}
+}

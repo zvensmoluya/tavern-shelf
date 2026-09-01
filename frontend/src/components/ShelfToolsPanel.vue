@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, FolderOpen, Power, X } from "@lucide/vue";
+import { Activity, FolderMinus, FolderOpen, FolderPlus, Power, X } from "@lucide/vue";
 import type { ShelfStatus } from "@/types";
 import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
@@ -7,7 +7,9 @@ import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 defineProps<{ open: boolean; status: ShelfStatus | null; busy: boolean }>();
 defineEmits<{
   close: [];
-  openInbox: [];
+  openInbox: [path: string];
+  addInbox: [];
+  removeInbox: [path: string];
   setAutoStart: [enabled: boolean];
 }>();
 </script>
@@ -27,8 +29,15 @@ defineEmits<{
             <FolderOpen :size="15" :stroke-width="1.7" aria-hidden="true" />
             <span class="text-[9px] font-semibold tracking-[.12em]">INBOX</span>
           </div>
-          <p class="mb-3 break-all font-mono text-[10px] leading-5 text-shelf-muted">{{ status?.paths.inbox || "正在读取路径…" }}</p>
-          <ShelfButton :icon="FolderOpen" :disabled="busy" @click="$emit('openInbox')">{{ status?.desktop.available ? "打开收件目录" : "复制收件目录" }}</ShelfButton>
+          <div v-if="status" class="mb-3 space-y-2">
+            <div v-for="path in status.paths.inboxes" :key="path" class="flex items-center gap-1.5 rounded-lg border border-shelf-line bg-black/10 px-2 py-1.5">
+              <button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-[9px] leading-5 text-shelf-muted hover:text-shelf-text-soft" :title="path" :disabled="busy" @click="$emit('openInbox', path)">{{ path }}</button>
+              <ShelfIconButton :icon="FolderOpen" :label="status.desktop.available ? '打开目录' : '复制路径'" :size="14" class="size-7 shrink-0 border-transparent bg-transparent" :disabled="busy" @click="$emit('openInbox', path)" />
+              <ShelfIconButton :icon="FolderMinus" label="停止扫描此目录" :size="13" class="size-7 shrink-0 border-transparent bg-transparent text-shelf-muted hover:text-shelf-danger" :disabled="busy || status.paths.inboxes.length <= 1" @click="$emit('removeInbox', path)" />
+            </div>
+          </div>
+          <p v-else class="mb-3 text-[10px] text-shelf-muted">正在读取路径…</p>
+          <ShelfButton :icon="FolderPlus" :disabled="busy || !status" @click="$emit('addInbox')">添加扫描目录</ShelfButton>
         </section>
 
         <section v-if="status?.desktop.available" class="border-b border-shelf-line p-4">
@@ -50,7 +59,7 @@ defineEmits<{
             <div class="text-[9px] font-semibold tracking-[.12em] text-shelf-muted">SCANNER</div>
             <p class="mt-1 text-[10px] leading-5 text-shelf-muted">
               <template v-if="status?.scanner.lastError">{{ status.scanner.lastErrorFile }} 暂未收录</template>
-              <template v-else-if="status?.scanner.running">{{ status.scanner.pending ? `正在确认 ${status.scanner.pending} 个文件` : "正在监视 Inbox" }}</template>
+              <template v-else-if="status?.scanner.running">{{ status.scanner.pending ? `正在确认 ${status.scanner.pending} 个文件` : `正在监视 ${status.paths.inboxes.length} 个目录` }}</template>
               <template v-else>扫描器已停止</template>
             </p>
           </div>

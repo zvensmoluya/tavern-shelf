@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/openai/tavern-shelf/internal/card"
@@ -22,6 +25,7 @@ type App struct {
 	Store   *store.Store
 	Scanner *scanner.Scanner
 	logger  *slog.Logger
+	inboxMu sync.Mutex
 }
 
 type Options struct {
@@ -48,9 +52,21 @@ func Open(options Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	inboxes, err := s.InboxDirectories(context.Background())
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	if len(inboxes) == 0 {
+		inboxes = []string{p.Inbox}
+		if err := s.ReplaceInboxDirectories(context.Background(), inboxes); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+	}
 	imp := importer.New(p, s)
 	scan := scanner.New(scanner.Config{
-		Inbox: p.Inbox, Interval: options.ScanInterval, StableFor: options.StableFor,
+		Inboxes: inboxes, Interval: options.ScanInterval, StableFor: options.StableFor,
 		RetryAfter: options.RetryAfter, Import: imp, Logger: options.Logger,
 		OnLibraryHit: options.OnLibraryHit,
 	})
@@ -63,6 +79,98 @@ func Open(options Options) (*App, error) {
 }
 
 func (a *App) Close() error { return a.Store.Close() }
+
+func (a *App) Inboxes() []string { return a.Scanner.Inboxes() }
+
+func (a *App) AddInbox(ctx context.Context, directory string) error {
+	a.inboxMu.Lock()
+	defer a.inboxMu.Unlock()
+	directory, err := a.validateInbox(directory)
+	if err != nil {
+		return err
+	}
+	directories := a.Inboxes()
+	for _, existing := range directories {
+		if samePath(existing, directory) {
+			return nil
+		}
+	}
+	directories = append(directories, directory)
+	if err := a.Store.ReplaceInboxDirectories(ctx, directories); err != nil {
+		return err
+	}
+	a.Scanner.SetInboxes(directories)
+	return nil
+}
+
+func (a *App) RemoveInbox(ctx context.Context, directory string) error {
+	a.inboxMu.Lock()
+	defer a.inboxMu.Unlock()
+	directory, err := filepath.Abs(strings.TrimSpace(directory))
+	if err != nil {
+		return fmt.Errorf("resolve Inbox directory: %w", err)
+	}
+	directories := a.Inboxes()
+	if len(directories) <= 1 {
+		return errors.New("at least one Inbox directory is required")
+	}
+	next := make([]string, 0, len(directories)-1)
+	found := false
+	for _, existing := range directories {
+		if samePath(existing, directory) {
+			found = true
+			continue
+		}
+		next = append(next, existing)
+	}
+	if !found {
+		return errors.New("Inbox directory is not configured")
+	}
+	if err := a.Store.ReplaceInboxDirectories(ctx, next); err != nil {
+		return err
+	}
+	a.Scanner.SetInboxes(next)
+	return nil
+}
+
+func (a *App) HasInbox(directory string) bool {
+	abs, err := filepath.Abs(strings.TrimSpace(directory))
+	if err != nil {
+		return false
+	}
+	for _, existing := range a.Inboxes() {
+		if samePath(existing, abs) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) validateInbox(directory string) (string, error) {
+	directory = strings.TrimSpace(directory)
+	if directory == "" {
+		return "", errors.New("Inbox directory is required")
+	}
+	abs, err := filepath.Abs(directory)
+	if err != nil {
+		return "", fmt.Errorf("resolve Inbox directory: %w", err)
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("resolve Inbox directory links: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("inspect Inbox directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", errors.New("Inbox path must be a directory")
+	}
+	if samePath(abs, a.Paths.Root) || isSameOrWithin(a.Paths.Library, abs) || isSameOrWithin(a.Paths.AppData, abs) || isSameOrWithin(a.Paths.Trash, abs) {
+		return "", errors.New("managed Library, AppData, and Trash paths cannot be used as Inbox directories")
+	}
+	return filepath.Clean(abs), nil
+}
 
 func (a *App) List(ctx context.Context) ([]library.Character, error) {
 	characters, err := a.Store.List(ctx)
@@ -166,4 +274,21 @@ func isWithin(parent, child string) bool {
 		return false
 	}
 	return rel != "." && rel != ".." && !filepath.IsAbs(rel) && len(rel) > 0 && rel[:1] != "."
+}
+
+func isSameOrWithin(parent, child string) bool {
+	if samePath(parent, child) {
+		return true
+	}
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func samePath(left, right string) bool {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }

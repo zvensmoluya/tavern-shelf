@@ -83,3 +83,38 @@ func TestScannerBacksOffInvalidFiles(t *testing.T) {
 		t.Fatalf("invalid source was removed: %v", err)
 	}
 }
+
+func TestScannerImportsFromMultipleInboxes(t *testing.T) {
+	p, _ := paths.New(t.TempDir())
+	_ = p.Ensure()
+	s, err := store.Open(p.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	second := t.TempDir()
+	scan := New(Config{
+		Inboxes: []string{p.Inbox, second}, StableFor: time.Second, RetryAfter: time.Hour,
+		Import: importer.New(p, s), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	cards := map[string]string{
+		filepath.Join(p.Inbox, "first.json"): `{"spec":"chara_card_v2","data":{"name":"First"}}`,
+		filepath.Join(second, "second.json"): `{"spec":"chara_card_v2","data":{"name":"Second"}}`,
+	}
+	for path, raw := range cards {
+		if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t0 := time.Now()
+	if err := scan.ScanOnce(context.Background(), t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := scan.ScanOnce(context.Background(), t0.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	characters, err := s.List(context.Background())
+	if err != nil || len(characters) != 2 {
+		t.Fatalf("multiple Inbox import mismatch: %#v, %v", characters, err)
+	}
+}

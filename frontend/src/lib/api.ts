@@ -12,7 +12,22 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   listCharacters: () => request<Character[]>("/api/characters"),
   status: () => request<ShelfStatus>("/api/status"),
-  openInbox: () => request<void>("/api/desktop/open-inbox", { method: "POST" }),
+  chooseInbox: () => request<{ path: string }>("/api/desktop/choose-inbox", { method: "POST" }),
+  addInbox: (path: string) => request<void>("/api/inboxes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }),
+  removeInbox: (path: string) => request<void>("/api/inboxes", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }),
+  openInbox: (path: string) => request<void>("/api/desktop/open-inbox", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }),
   setAutoStart: (enabled: boolean) => request<void>("/api/desktop/autostart", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

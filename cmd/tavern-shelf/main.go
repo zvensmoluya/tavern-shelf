@@ -50,7 +50,7 @@ func run() error {
 	}
 	serveDone := make(chan error, 1)
 	go func() {
-		logger.Info("Tavern Shelf is ready", "url", "http://"+*listen, "inbox", shelf.Paths.Inbox)
+		logger.Info("Tavern Shelf is ready", "url", "http://"+*listen, "inboxes", shelf.Inboxes())
 		serveDone <- server.ListenAndServe()
 	}()
 

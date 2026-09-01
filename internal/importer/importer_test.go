@@ -82,6 +82,41 @@ func TestInvalidCardRemainsInInbox(t *testing.T) {
 	}
 }
 
+func TestImportFromConfiguredExternalInbox(t *testing.T) {
+	imp, p, _ := testImporter(t)
+	external := t.TempDir()
+	source := filepath.Join(external, "external.json")
+	if err := os.WriteFile(source, []byte(validCard), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := imp.ImportFrom(context.Background(), external, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("external Inbox source still exists after import: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Library, result.Character.SourceRelPath)); err != nil {
+		t.Fatalf("managed source missing: %v", err)
+	}
+}
+
+func TestImportFromRejectsFileOutsideConfiguredInbox(t *testing.T) {
+	imp, _, _ := testImporter(t)
+	external := t.TempDir()
+	other := t.TempDir()
+	source := filepath.Join(other, "outside.json")
+	if err := os.WriteFile(source, []byte(validCard), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := imp.ImportFrom(context.Background(), external, source); err == nil {
+		t.Fatal("expected source outside configured Inbox to be rejected")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("rejected source was changed: %v", err)
+	}
+}
+
 func testImporter(t *testing.T) (*Importer, paths.Paths, *store.Store) {
 	t.Helper()
 	p, err := paths.New(t.TempDir())

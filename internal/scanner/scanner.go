@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 type Config struct {
 	Inbox        string
+	Inboxes      []string
 	Interval     time.Duration
 	StableFor    time.Duration
 	RetryAfter   time.Duration
@@ -43,7 +45,7 @@ type observation struct {
 }
 
 type Scanner struct {
-	inbox        string
+	inboxes      []string
 	interval     time.Duration
 	stableFor    time.Duration
 	retryAfter   time.Duration
@@ -69,8 +71,12 @@ func New(config Config) *Scanner {
 	if config.Logger == nil {
 		config.Logger = slog.Default()
 	}
+	inboxes := append([]string(nil), config.Inboxes...)
+	if len(inboxes) == 0 && config.Inbox != "" {
+		inboxes = []string{config.Inbox}
+	}
 	return &Scanner{
-		inbox: config.Inbox, interval: config.Interval, stableFor: config.StableFor,
+		inboxes: inboxes, interval: config.Interval, stableFor: config.StableFor,
 		retryAfter: config.RetryAfter, importer: config.Import, logger: config.Logger,
 		onLibraryHit: config.OnLibraryHit, observations: make(map[string]observation),
 	}
@@ -97,18 +103,37 @@ func (s *Scanner) Run(ctx context.Context) error {
 }
 
 func (s *Scanner) ScanOnce(ctx context.Context, now time.Time) error {
-	entries, err := os.ReadDir(s.inbox)
+	seen := make(map[string]struct{})
+	pending := 0
+	var scanErrors []error
+	for _, inbox := range s.Inboxes() {
+		count, err := s.scanInbox(ctx, now, inbox, seen)
+		pending += count
+		if err != nil {
+			scanErrors = append(scanErrors, err)
+			s.recordError(now, inbox, err)
+		}
+	}
+	s.pruneObservations(seen)
+	s.mu.Lock()
+	s.status.Pending = pending
+	s.status.LastScanAt = now.UTC()
+	s.mu.Unlock()
+	return errors.Join(scanErrors...)
+}
+
+func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, seen map[string]struct{}) (int, error) {
+	entries, err := os.ReadDir(inbox)
 	if err != nil {
-		return fmt.Errorf("read Inbox: %w", err)
+		return 0, fmt.Errorf("read Inbox %q: %w", inbox, err)
 	}
 	sort.Slice(entries, func(a, b int) bool { return entries[a].Name() < entries[b].Name() })
-	seen := make(map[string]struct{}, len(entries))
 	pending := 0
 	for _, entry := range entries {
 		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		path := filepath.Join(s.inbox, entry.Name())
+		path := filepath.Join(inbox, entry.Name())
 		if !card.Supported(path) {
 			continue
 		}
@@ -127,7 +152,7 @@ func (s *Scanner) ScanOnce(ctx context.Context, now time.Time) error {
 		if now.Before(obs.nextRetry) || now.Sub(obs.stableSince) < s.stableFor {
 			continue
 		}
-		result, err := s.importer.Import(ctx, path)
+		result, err := s.importer.ImportFrom(ctx, inbox, path)
 		if err != nil {
 			obs.nextRetry = now.Add(s.retryAfter)
 			s.setObservation(path, obs)
@@ -147,12 +172,19 @@ func (s *Scanner) ScanOnce(ctx context.Context, now time.Time) error {
 			s.onLibraryHit()
 		}
 	}
-	s.pruneObservations(seen)
+	return pending, nil
+}
+
+func (s *Scanner) Inboxes() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.inboxes...)
+}
+
+func (s *Scanner) SetInboxes(inboxes []string) {
 	s.mu.Lock()
-	s.status.Pending = pending
-	s.status.LastScanAt = now.UTC()
+	s.inboxes = append([]string(nil), inboxes...)
 	s.mu.Unlock()
-	return nil
 }
 
 func (s *Scanner) Status() Status {

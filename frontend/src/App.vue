@@ -60,18 +60,55 @@ async function loadStatus() {
   }
 }
 
-async function openInbox() {
+async function openInbox(path?: string) {
   if (!status.value) return;
+  const directory = path || status.value.paths.inboxes[0] || status.value.paths.inbox;
   toolBusy.value = true;
   try {
     if (status.value.desktop.available) {
-      await api.openInbox();
+      await api.openInbox(directory);
     } else {
-      await navigator.clipboard.writeText(status.value.paths.inbox);
+      await navigator.clipboard.writeText(directory);
       showNotice("Inbox 路径已复制");
     }
   } catch (error) {
     showNotice(`无法打开 Inbox：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    toolBusy.value = false;
+  }
+}
+
+async function addInbox() {
+  if (!status.value) return;
+  toolBusy.value = true;
+  try {
+    let path = "";
+    if (status.value.desktop.available) {
+      path = (await api.chooseInbox()).path;
+    } else {
+      path = window.prompt("输入要自动扫描的目录绝对路径")?.trim() || "";
+    }
+    if (!path) return;
+    await api.addInbox(path);
+    await loadStatus();
+    showNotice("已添加扫描目录");
+  } catch (error) {
+    showNotice(`无法添加目录：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    toolBusy.value = false;
+  }
+}
+
+async function removeInbox(path: string) {
+  if (!status.value || status.value.paths.inboxes.length <= 1) return;
+  if (!window.confirm(`停止扫描这个目录？\n\n${path}\n\n目录和其中尚未收录的文件不会被删除。`)) return;
+  toolBusy.value = true;
+  try {
+    await api.removeInbox(path);
+    await loadStatus();
+    showNotice("已停止扫描该目录");
+  } catch (error) {
+    showNotice(`无法移除目录：${error instanceof Error ? error.message : "未知错误"}`, true);
   } finally {
     toolBusy.value = false;
   }
@@ -168,6 +205,8 @@ onBeforeUnmount(() => {
     :busy="toolBusy"
     @close="toolsOpen = false"
     @open-inbox="openInbox"
+    @add-inbox="addInbox"
+    @remove-inbox="removeInbox"
     @set-auto-start="setAutoStart"
   />
 
