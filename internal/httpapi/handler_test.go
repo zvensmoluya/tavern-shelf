@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,74 @@ import (
 	"github.com/openai/tavern-shelf/internal/importer"
 	"github.com/openai/tavern-shelf/internal/library"
 )
+
+func TestDragImportAPI(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "dragged.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte(`{"spec":"chara_card_v2","data":{"name":"Dragged","description":"Dropped safely"}}`))
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/imports", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("import code = %d, body = %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		ID        string `json:"id"`
+		Kind      string `json:"kind"`
+		Duplicate bool   `json:"duplicate"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ID == "" || result.Kind != "character" || result.Duplicate {
+		t.Fatalf("unexpected import response: %#v", result)
+	}
+}
+
+func TestOneShotScanAPILeavesSourceInPlace(t *testing.T) {
+	external := t.TempDir()
+	source := filepath.Join(external, "one-shot.json")
+	if err := os.WriteFile(source, []byte(`{"spec":"chara_card_v2","data":{"name":"One Shot","description":"Keep me"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir(), StableFor: 5 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestJSON(t, handler, http.MethodPost, "/api/scans", map[string]string{"path": external}, http.StatusAccepted)
+	deadline := time.Now().Add(2 * time.Second)
+	for shelf.OneShotScanStatus().Running && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if finished := shelf.OneShotScanStatus(); finished.Imported != 1 || finished.Failed != 0 {
+		t.Fatalf("unexpected scan result: %#v", finished)
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("one-time scan removed source: %v", err)
+	}
+}
 
 func TestInboxDirectoryAPI(t *testing.T) {
 	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})

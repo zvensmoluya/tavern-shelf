@@ -1,4 +1,4 @@
-import type { Character, ShelfResource, ShelfStatus, TransferSession, TransferTarget } from "@/types";
+import type { Character, ImportResult, ShelfResource, ShelfStatus, TransferSession, TransferTarget } from "@/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -24,6 +24,16 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
   }),
+	startScanOnce: (path: string) => request<ShelfStatus["oneShotScan"]>("/api/scans", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path }),
+	}),
+	importFile: (file: File) => {
+		const body = new FormData();
+		body.append("file", file, file.name);
+		return request<ImportResult>("/api/imports", { method: "POST", body });
+	},
   openInbox: (path: string) => request<void>("/api/desktop/open-inbox", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -9,6 +10,63 @@ import (
 
 	"github.com/openai/tavern-shelf/internal/library"
 )
+
+const testCharacterJSON = `{"spec":"chara_card_v2","spec_version":"2.0","data":{"name":"Collected","description":"Safe source","first_mes":"Hello"}}`
+
+func TestImportUploadCopiesIntoManagedLibrary(t *testing.T) {
+	shelf, err := Open(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	result, err := shelf.ImportUpload(context.Background(), "Collected.json", bytes.NewBufferString(testCharacterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != "character" || result.Name != "Collected" || result.Duplicate {
+		t.Fatalf("unexpected import result: %#v", result)
+	}
+	managed := filepath.Join(shelf.Paths.Library, result.Character.SourceRelPath)
+	if raw, err := os.ReadFile(managed); err != nil || string(raw) != testCharacterJSON {
+		t.Fatalf("managed source mismatch: %q, %v", raw, err)
+	}
+	duplicate, err := shelf.ImportUpload(context.Background(), "Collected again.json", bytes.NewBufferString(testCharacterJSON))
+	if err != nil || !duplicate.Duplicate || duplicate.Character.ID != result.Character.ID {
+		t.Fatalf("unexpected duplicate result: %#v, %v", duplicate, err)
+	}
+}
+
+func TestOneShotScanCopiesWithoutRememberingDirectory(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	source := filepath.Join(external, "Collected.json")
+	if err := os.WriteFile(source, []byte(testCharacterJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := Open(Options{DataDir: root, StableFor: 5 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	started, err := shelf.StartScanOnce(context.Background(), external)
+	if err != nil || !started.Running || started.Total != 1 {
+		t.Fatalf("unexpected started scan: %#v, %v", started, err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for shelf.OneShotScanStatus().Running && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	finished := shelf.OneShotScanStatus()
+	if finished.Running || finished.Imported != 1 || finished.Failed != 0 {
+		t.Fatalf("unexpected finished scan: %#v", finished)
+	}
+	if raw, err := os.ReadFile(source); err != nil || string(raw) != testCharacterJSON {
+		t.Fatalf("one-time scan changed source: %q, %v", raw, err)
+	}
+	if shelf.HasInbox(external) {
+		t.Fatal("one-time scan directory was persisted as a watched Inbox")
+	}
+}
 
 func TestDeleteOnlyMovesManagedCharacterToTrash(t *testing.T) {
 	shelf, err := Open(Options{DataDir: t.TempDir()})

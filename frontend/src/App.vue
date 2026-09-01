@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { AlertCircle, BookOpenText, LoaderCircle, SearchX, SlidersHorizontal } from "@lucide/vue";
 import CharacterDetailDialog from "@/components/CharacterDetailDialog.vue";
+import DropImportOverlay from "@/components/DropImportOverlay.vue";
 import EmptyLibrary from "@/components/EmptyLibrary.vue";
 import LibraryCard from "@/components/LibraryCard.vue";
 import LibraryHeader from "@/components/LibraryHeader.vue";
@@ -26,6 +27,7 @@ const selectedResourceID = ref<string | null>(null);
 const transferTarget = ref<TransferTarget | null>(null);
 const deleting = ref(false);
 const toolBusy = ref(false);
+const importing = ref(false);
 const notice = ref<{ message: string; error: boolean } | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -132,11 +134,65 @@ async function addInbox() {
     if (!path) return;
     await api.addInbox(path);
     await loadStatus();
-    showNotice("已添加扫描目录；源文件会保留在原处");
+    showNotice("已添加长期监视目录；源文件会保留在原处");
   } catch (error) {
     showNotice(`无法添加目录：${error instanceof Error ? error.message : "未知错误"}`, true);
   } finally {
     toolBusy.value = false;
+  }
+}
+
+async function scanOnce() {
+  if (!status.value || status.value.oneShotScan.running) return;
+  toolBusy.value = true;
+  try {
+    let path = "";
+    if (status.value.desktop.available) {
+      path = (await api.chooseInbox()).path;
+    } else {
+      path = window.prompt("输入要扫描一次的目录绝对路径")?.trim() || "";
+    }
+    if (!path) return;
+    await api.startScanOnce(path);
+    await loadStatus();
+    showNotice("已开始扫描；目录不会被记住，原文件会保留");
+  } catch (error) {
+    showNotice(`无法扫描目录：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    toolBusy.value = false;
+  }
+}
+
+async function importDroppedFiles(files: File[]) {
+  if (importing.value) return;
+  const supported = files.filter(file => /\.(png|json)$/i.test(file.name));
+  const unsupported = files.length - supported.length;
+  if (!supported.length) {
+    showNotice("请拖入角色卡 PNG，或角色卡、世界书、预设 JSON", true);
+    return;
+  }
+  importing.value = true;
+  let imported = 0;
+  let duplicates = 0;
+  const failures: string[] = [];
+  try {
+    for (const file of supported) {
+      try {
+        const result = await api.importFile(file);
+        if (result.duplicate) duplicates++;
+        else imported++;
+      } catch (error) {
+        failures.push(`${file.name}：${error instanceof Error ? error.message : "无法识别"}`);
+      }
+    }
+    await Promise.all([loadLibrary(true), loadStatus()]);
+    const summary = [`收藏 ${imported} 项`];
+    if (duplicates) summary.push(`${duplicates} 项已在 Shelf`);
+    if (unsupported) summary.push(`跳过 ${unsupported} 个不支持的文件`);
+    if (failures.length) summary.push(`${failures.length} 项未收录`);
+    showNotice(failures.length ? `${summary.join(" · ")}；${failures[0]}` : summary.join(" · "), failures.length > 0, failures.length ? 8000 : 4500);
+  } finally {
+    importing.value = false;
   }
 }
 
@@ -303,6 +359,7 @@ onBeforeUnmount(() => {
     @close="toolsOpen = false"
     @open-inbox="openInbox"
     @add-inbox="addInbox"
+    @scan-once="scanOnce"
     @remove-inbox="removeInbox"
     @set-auto-start="setAutoStart"
   />
@@ -315,6 +372,8 @@ onBeforeUnmount(() => {
     @remove="removeCharacter"
     @transfer="shareCharacter"
   />
+
+  <DropImportOverlay :importing="importing" @import="importDroppedFiles" />
 
   <ResourceDetailDialog
     :open="Boolean(selectedResource)"

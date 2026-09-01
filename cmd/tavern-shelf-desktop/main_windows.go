@@ -90,7 +90,7 @@ func main() {
 			CanChooseDirectories(true).
 			CanCreateDirectories(true).
 			AttachToWindow(window).
-			SetTitle("选择要自动扫描的目录").
+			SetTitle("选择资源目录").
 			SetDirectory(initial).
 			PromptForSingleSelection()
 	}

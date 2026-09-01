@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, FolderMinus, FolderOpen, FolderPlus, Power, X } from "@lucide/vue";
+import { Activity, FolderInput, FolderMinus, FolderOpen, FolderPlus, Power, X } from "@lucide/vue";
 import type { ShelfStatus } from "@/types";
 import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
@@ -9,6 +9,7 @@ defineEmits<{
   close: [];
   openInbox: [path: string];
   addInbox: [];
+  scanOnce: [];
   removeInbox: [path: string];
   setAutoStart: [enabled: boolean];
 }>();
@@ -36,12 +37,19 @@ defineEmits<{
                 <ShelfIconButton :icon="FolderOpen" :label="status.desktop.available ? '打开目录' : '复制路径'" :size="14" class="size-7 shrink-0 border-transparent bg-transparent" :disabled="busy" @click="$emit('openInbox', inbox.path)" />
                 <ShelfIconButton :icon="FolderMinus" label="停止扫描此目录" :size="13" class="size-7 shrink-0 border-transparent bg-transparent text-shelf-muted hover:text-shelf-danger" :disabled="busy || status.paths.inboxes.length <= 1" @click="$emit('removeInbox', inbox.path)" />
               </div>
-              <span class="ml-0.5 inline-flex rounded px-1.5 py-0.5 text-[8px]" :class="inbox.mode === 'move' ? 'bg-amber-300/10 text-amber-200/70' : 'bg-shelf-success/10 text-shelf-success/75'">{{ inbox.mode === "move" ? "收录后搬入 Shelf" : "只复制 · 保留源文件" }}</span>
+              <span class="ml-0.5 inline-flex rounded px-1.5 py-0.5 text-[8px]" :class="inbox.mode === 'move' ? 'bg-amber-300/10 text-amber-200/70' : 'bg-shelf-success/10 text-shelf-success/75'">{{ inbox.mode === "move" ? "由 Shelf 接管" : "长期监视 · 保留原文件" }}</span>
             </div>
           </div>
           <p v-else class="mb-3 text-[10px] text-shelf-muted">正在读取路径…</p>
-          <ShelfButton :icon="FolderPlus" :disabled="busy || !status" @click="$emit('addInbox')">添加扫描目录</ShelfButton>
-          <p class="mt-2 text-[9px] leading-5 text-shelf-quiet">默认 Inbox 会在成功收录后搬入 Shelf；额外目录只扫描并复制，原文件始终保留。</p>
+          <div class="flex flex-wrap gap-2">
+            <ShelfButton :icon="FolderPlus" :disabled="busy || !status" @click="$emit('addInbox')">添加长期监视目录</ShelfButton>
+            <ShelfButton :icon="FolderInput" :disabled="busy || !status || status.oneShotScan.running" @click="$emit('scanOnce')">扫描一次</ShelfButton>
+          </div>
+          <p class="mt-2 text-[9px] leading-5 text-shelf-quiet">默认 Inbox 中的资源由 Shelf 接管；长期监视、扫描一次和界面拖拽都只复制收藏，原文件始终保留。</p>
+          <div v-if="status?.oneShotScan.id" class="mt-2 rounded-lg border border-shelf-line bg-black/10 px-2.5 py-2 text-[9px] leading-5 text-shelf-muted">
+            <p class="truncate" :title="status.oneShotScan.directory">{{ status.oneShotScan.running ? "正在扫描一次" : "上次扫描完成" }} · {{ status.oneShotScan.directory }}</p>
+            <p>发现 {{ status.oneShotScan.total }} · 新增 {{ status.oneShotScan.imported }} · 已有 {{ status.oneShotScan.duplicates }}<template v-if="status.oneShotScan.failed"> · 未收录 {{ status.oneShotScan.failed }}</template></p>
+          </div>
         </section>
 
         <section v-if="status?.desktop.available" class="border-b border-shelf-line p-4">

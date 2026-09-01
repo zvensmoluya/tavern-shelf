@@ -1,6 +1,6 @@
 # Tavern Shelf
 
-Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 角色卡放进 Shelf 自己的默认 Inbox 后，Shelf 会等待文件写入稳定、解析卡片、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。额外添加的扫描目录采用只读式收集：内容会复制入库，源文件始终留在原处。
+Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 资源放进 Shelf 自己的默认 Inbox 后，Shelf 会等待文件写入稳定、解析内容、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。也可以长期监视外部目录、只扫描某个目录一次，或者直接把文件拖到 Shelf 窗口；这三种方式都只复制收藏，源文件始终留在原处。
 
 当前仓库已经包含本地资源收录的完整纵向路径：
 
@@ -69,7 +69,13 @@ Tavern Shelf/
 
 原始卡是 source of truth。数据库字段和 UI 数据都可以从 Source 重建。导入时 Shelf 会先解析原文件，再把它复制到暂存目录并核对 SHA-256；只有托管副本和数据库记录都成功后，才会移除 Inbox 中的文件。解析失败或仍在写入的文件会留在 Inbox。
 
-默认 Inbox 开箱即用，也可以在 Shelf 工具面板中添加多个现有目录。只有 Shelf 自己管理的默认 Inbox 会在收录成功后移除源文件；额外目录只扫描并复制，重复内容同样留在原处。配置保存在 Shelf 数据库中并在重启后恢复；移除扫描目录只会停止监视，不会删除该目录或其中的文件。
+Shelf 提供三种明确的来源模式：
+
+- 默认 Inbox：由 Shelf 接管，成功收录后原件进入 Managed Library；
+- 长期监视目录：配置会在重启后恢复，只复制新内容，原文件保留；
+- 扫描一次：只处理选择目录当时已有的顶层 PNG / JSON，不保存目录配置，原文件保留。
+
+此外可以直接把一个或多个 PNG / JSON 拖到 Shelf 窗口完成收藏。拖拽上传先进入 Shelf 私有暂存区，校验并收录完成后清理暂存副本，不会修改拖拽来源。移除长期监视目录只会停止监视，不会删除目录或其中的文件。
 
 ## 当前支持
 
@@ -79,6 +85,7 @@ Tavern Shelf/
 - 可重建的 Content Manifest：角色设定、开场与 alternate/group greetings、Character Book entry、Regex script 匹配信息、extension/asset 类型，以及 HTML、JavaScript 和已知交互扩展的存在性；
 - 内容哈希去重，同名但内容不同的卡片不会互相覆盖；
 - 可持久化配置多个 Inbox，并在运行中立即添加或移除扫描目录；
+- 一次性目录扫描和窗口拖拽收藏，两者均采用复制语义并保留来源；
 - 独立分发的 SillyTavern 世界书 JSON，按文件名命名并展示条目、关键词、启用状态与正文；
 - SillyTavern 预设 JSON，识别 Chat Completion、Kobold、NovelAI、Text Generation、Context、Instruct、System Prompt 和 Reasoning 子类型；
 - 角色、世界书和预设使用各自独立的 Library 分类；角色卡内嵌世界书只保留在角色详情中，不会重复创建独立世界书；

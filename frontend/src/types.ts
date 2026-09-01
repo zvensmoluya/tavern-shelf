@@ -165,4 +165,23 @@ export interface ShelfStatus {
   };
   desktop: { available: boolean; autoStart: boolean };
   scanner: { running: boolean; pending: number; lastError?: string; lastErrorFile?: string };
+	oneShotScan: {
+		id?: string;
+		directory?: string;
+		running: boolean;
+		total: number;
+		imported: number;
+		duplicates: number;
+		failed: number;
+		startedAt?: string;
+		completedAt?: string;
+		issues?: Array<{ file: string; error: string }>;
+	};
+}
+
+export interface ImportResult {
+	id: string;
+	kind: "character" | "worldbook" | "preset";
+	name: string;
+	duplicate: boolean;
 }

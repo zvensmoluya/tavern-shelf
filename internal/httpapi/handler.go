@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -49,12 +50,62 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"scanner": application.Scanner.Status(),
+			"scanner":     application.Scanner.Status(),
+			"oneShotScan": application.OneShotScanStatus(),
 			"paths": map[string]any{
 				"inbox": application.Paths.Inbox, "inboxes": inboxes, "inboxDetails": inboxDetails,
 				"library": application.Paths.Library, "appData": application.Paths.AppData, "trash": application.Paths.Trash,
 			},
 			"desktop": desktopStatus,
+		})
+	})
+	mux.HandleFunc("POST /api/scans", func(w http.ResponseWriter, r *http.Request) {
+		path, ok := decodeDirectory(w, r)
+		if !ok {
+			return
+		}
+		status, err := application.StartScanOnce(r.Context(), path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, status)
+	})
+	mux.HandleFunc("POST /api/imports", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, app.MaxUploadSize+(1<<20))
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, app.ErrUploadTooLarge)
+				return
+			}
+			writeError(w, http.StatusBadRequest, errors.New("a PNG or JSON file is required"))
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		defer file.Close()
+		result, err := application.ImportUpload(r.Context(), header.Filename, io.LimitReader(file, app.MaxUploadSize+1))
+		if err != nil {
+			if errors.Is(err, app.ErrUploadTooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, err)
+				return
+			}
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		id := result.Character.ID
+		if result.Resource.ID != "" {
+			id = result.Resource.ID
+		}
+		statusCode := http.StatusCreated
+		if result.Duplicate {
+			statusCode = http.StatusOK
+		}
+		writeJSON(w, statusCode, map[string]any{
+			"id": id, "kind": result.Kind, "name": result.Name, "duplicate": result.Duplicate,
 		})
 	})
 	mux.HandleFunc("POST /api/inboxes", func(w http.ResponseWriter, r *http.Request) {

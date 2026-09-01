@@ -22,12 +22,20 @@ import (
 )
 
 type App struct {
-	Paths     paths.Paths
-	Store     *store.Store
-	Scanner   *scanner.Scanner
-	Transfers *transfer.Server
-	logger    *slog.Logger
-	inboxMu   sync.Mutex
+	Paths        paths.Paths
+	Store        *store.Store
+	Scanner      *scanner.Scanner
+	Importer     *importer.Importer
+	Transfers    *transfer.Server
+	logger       *slog.Logger
+	inboxMu      sync.Mutex
+	runCtx       context.Context
+	cancel       context.CancelFunc
+	workWG       sync.WaitGroup
+	stableFor    time.Duration
+	onLibraryHit func()
+	scanMu       sync.RWMutex
+	oneShotScan  OneShotScanStatus
 }
 
 type Options struct {
@@ -66,15 +74,23 @@ func Open(options Options) (*App, error) {
 			return nil, err
 		}
 	}
+	if options.StableFor <= 0 {
+		options.StableFor = 2 * time.Second
+	}
 	imp := importer.New(p, s)
 	scan := scanner.New(scanner.Config{
 		Inboxes: inboxes, ManagedInbox: p.Inbox, Interval: options.ScanInterval, StableFor: options.StableFor,
 		RetryAfter: options.RetryAfter, Import: imp, Logger: options.Logger,
 		OnLibraryHit: options.OnLibraryHit,
 	})
-	result := &App{Paths: p, Store: s, Scanner: scan, logger: options.Logger}
+	runCtx, cancel := context.WithCancel(context.Background())
+	result := &App{
+		Paths: p, Store: s, Scanner: scan, Importer: imp, logger: options.Logger,
+		runCtx: runCtx, cancel: cancel, stableFor: options.StableFor, onLibraryHit: options.OnLibraryHit,
+	}
 	result.Transfers = transfer.NewServer(result.resolveTransferSource)
 	if err := result.backfillManifests(context.Background()); err != nil {
+		cancel()
 		_ = s.Close()
 		return nil, err
 	}
@@ -82,6 +98,8 @@ func Open(options Options) (*App, error) {
 }
 
 func (a *App) Close() error {
+	a.cancel()
+	a.workWG.Wait()
 	transferErr := a.Transfers.Close()
 	storeErr := a.Store.Close()
 	if transferErr != nil {
