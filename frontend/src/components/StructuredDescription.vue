@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronUp } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import ExpandableText from "@/components/ui/ExpandableText.vue";
-import ShelfDisclosure from "@/components/ui/ShelfDisclosure.vue";
 
 type Segment =
   | { type: "prose"; text: string }
@@ -10,7 +8,6 @@ type Segment =
   | { type: "dialogue"; messages: Array<{ role: "user" | "char"; text: string }> };
 
 const props = defineProps<{ text: string; characterName: string }>();
-const expandedGroups = ref<number[]>([]);
 
 const segments = computed<Segment[]>(() => {
   const output: Segment[] = [];
@@ -52,28 +49,11 @@ function decodeQuoted(value: string): string {
 }
 
 function cleanLabel(label: string): string {
-  const escapedName = props.characterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const withoutOwner = label.replace(new RegExp(`^${escapedName}(?:'s|’s)\\s+`, "i"), "");
-  const known: Record<string, string> = {
-    personality: "Personality · 性格",
-    body: "Body · 外观",
-    appearance: "Appearance · 外观",
-    clothing: "Clothing · 服装",
-    clothes: "Clothing · 服装",
-    likes: "Likes · 喜好",
-    dislikes: "Dislikes · 厌恶",
-  };
-  return known[withoutOwner.toLocaleLowerCase()] || withoutOwner;
+  return label.replace(/\s+/g, " ").trim();
 }
 
-function isExpanded(index: number): boolean {
-  return expandedGroups.value.includes(index);
-}
-
-function toggle(index: number) {
-  expandedGroups.value = isExpanded(index)
-    ? expandedGroups.value.filter(value => value !== index)
-    : [...expandedGroups.value, index];
+function dialogueText(messages: Array<{ role: "user" | "char"; text: string }>): string {
+  return messages.map(message => `${message.role === "user" ? "User" : props.characterName}\n${message.text}`).join("\n\n");
 }
 </script>
 
@@ -81,38 +61,13 @@ function toggle(index: number) {
   <div class="grid gap-3">
     <template v-for="(segment, index) in segments" :key="index">
       <ExpandableText v-if="segment.type === 'prose'" :text="segment.text" variant="lead" label="展开完整描述" />
-      <ShelfDisclosure v-else-if="segment.type === 'dialogue'" title="附带对话片段" :meta="`${segment.messages.length} 条`" compact>
-        <div class="grid gap-2.5">
-          <div v-for="(message, messageIndex) in segment.messages" :key="messageIndex" class="rounded-lg bg-shelf-canvas/60 p-3.5">
-            <p class="mb-1.5 text-[9px] font-semibold uppercase tracking-[.1em] text-shelf-quiet">{{ message.role === "user" ? "User" : characterName }}</p>
-            <p class="whitespace-pre-wrap text-[12px] leading-[1.8] text-shelf-text-soft/90">{{ message.text }}</p>
-          </div>
-        </div>
-      </ShelfDisclosure>
-      <section v-else class="rounded-xl border border-shelf-line bg-white/[.022] p-4">
-        <header class="mb-3 flex items-baseline justify-between gap-4">
-          <h3 class="text-[13px] font-semibold text-shelf-text-soft">{{ segment.label }}</h3>
-          <span class="text-[10px] text-shelf-muted">{{ segment.values.length }} 项</span>
-        </header>
-        <div class="flex flex-wrap gap-2">
-          <span
-            v-for="(value, valueIndex) in (isExpanded(index) ? segment.values : segment.values.slice(0, 12))"
-            :key="`${value}-${valueIndex}`"
-            class="rounded-full border border-shelf-line bg-shelf-soft/70 px-2.5 py-1.5 text-[11px] leading-4 text-shelf-text-soft"
-          >{{ value }}</span>
-        </div>
-        <button
-          v-if="segment.values.length > 12"
-          type="button"
-          class="mt-3 inline-flex items-center gap-1.5 text-[10px] text-shelf-muted transition hover:text-shelf-text"
-          :aria-expanded="isExpanded(index)"
-          @click="toggle(index)"
-        >
-          {{ isExpanded(index) ? "收起" : `显示另外 ${segment.values.length - 12} 项` }}
-          <ChevronUp v-if="isExpanded(index)" :size="13" aria-hidden="true" />
-          <ChevronDown v-else :size="13" aria-hidden="true" />
-        </button>
-      </section>
+      <div v-else-if="segment.type === 'dialogue'" class="border-l-2 border-shelf-line-strong py-1 pl-4">
+        <ExpandableText :text="dialogueText(segment.messages)" :limit="380" variant="prose" label="展开完整内容" />
+      </div>
+      <div v-else class="border-l-2 border-shelf-line-strong py-1 pl-4">
+        <p class="mb-1.5 text-[11px] font-semibold text-shelf-muted">{{ segment.label }}</p>
+        <p class="text-[13px] leading-[1.85] text-shelf-text-soft">{{ segment.values.join(" · ") }}</p>
+      </div>
     </template>
   </div>
 </template>
