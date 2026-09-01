@@ -1,0 +1,15 @@
+# Runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+/bin/
+/build/bin/
+*.exe
+
+# Tools and editors
+.DS_Store
+.idea/
+.vscode/

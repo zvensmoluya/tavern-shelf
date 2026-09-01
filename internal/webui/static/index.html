@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17130f">
+  <title>Tavern Shelf</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#/" aria-label="Tavern Shelf 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>Tavern</strong><small>SHELF</small></span>
+      </a>
+      <nav>
+        <a class="nav-item active" href="#/"><span class="nav-icon">▦</span>角色库</a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <section class="inbox-panel">
+        <div class="eyebrow">INBOX</div>
+        <p id="inbox-path">正在读取路径…</p>
+        <button id="open-inbox" class="text-button" type="button">打开收件目录</button>
+      </section>
+      <label id="autostart-setting" class="setting hidden"><input id="autostart" type="checkbox"><span>登录后静默启动</span></label>
+      <div class="scanner-state"><span id="scanner-dot"></span><span id="scanner-label">扫描器启动中</span></div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">YOUR PRIVATE COLLECTION</div>
+          <h1>角色库</h1>
+        </div>
+        <div class="header-actions">
+          <label class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索角色或创作者" autocomplete="off"></label>
+          <button id="refresh" class="icon-button" title="刷新" aria-label="刷新">↻</button>
+        </div>
+      </header>
+
+      <section id="notice" class="notice hidden" role="status"></section>
+      <section id="content" class="content" aria-live="polite">
+        <div class="loading"><span></span><p>正在整理书架…</p></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="detail-dialog">
+    <button id="close-detail" class="dialog-close" aria-label="关闭">×</button>
+    <div id="detail-content"></div>
+  </dialog>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
