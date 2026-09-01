@@ -171,6 +171,57 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 		}
 		http.ServeContent(w, r, character.SourceFilename, info.ModTime(), file)
 	})
+	mux.HandleFunc("GET /api/resources", func(w http.ResponseWriter, r *http.Request) {
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if kind != "" && kind != "worldbook" && kind != "preset" {
+			writeError(w, http.StatusBadRequest, errors.New("invalid resource kind"))
+			return
+		}
+		resources, err := application.ListResources(r.Context(), kind)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resources)
+	})
+	mux.HandleFunc("GET /api/resources/{id}", func(w http.ResponseWriter, r *http.Request) {
+		resource, err := application.GetResource(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resource)
+	})
+	mux.HandleFunc("DELETE /api/resources/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := application.DeleteResource(r.Context(), r.PathValue("id")); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /api/resources/{id}/source", func(w http.ResponseWriter, r *http.Request) {
+		resource, path, err := application.ResourceSourcePath(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("open managed resource source: %w", err))
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("inspect managed resource source: %w", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if r.URL.Query().Has("download") {
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", safeDownloadName(resource.SourceFilename)))
+		}
+		http.ServeContent(w, r, resource.SourceFilename, info.ModTime(), file)
+	})
 	fileServer := http.FileServer(http.FS(assets))
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", fileServer))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {

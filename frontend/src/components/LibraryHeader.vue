@@ -2,15 +2,15 @@
 import { RefreshCw, Search } from "@lucide/vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 
-defineProps<{ count: number; query: string; refreshing: boolean }>();
+defineProps<{ count: number; query: string; refreshing: boolean; title: string; countLabel: string; searchPlaceholder: string }>();
 defineEmits<{ "update:query": [value: string]; refresh: [] }>();
 </script>
 
 <template>
   <header class="sticky top-0 z-10 flex min-h-[104px] items-end justify-between gap-7 border-b border-shelf-line bg-shelf-canvas/90 px-9 pb-5 pt-6 backdrop-blur-xl max-[860px]:min-h-[118px] max-[860px]:flex-col max-[860px]:items-stretch max-[860px]:gap-4 max-[860px]:px-5 max-[860px]:py-5">
     <div class="flex items-baseline gap-3">
-      <h1 class="m-0 text-[29px] font-semibold tracking-[-.035em]">Library</h1>
-      <span class="text-[11px] text-shelf-muted">{{ count ? `${count} 位角色` : "角色收藏" }}</span>
+      <h1 class="m-0 text-[29px] font-semibold tracking-[-.035em]">{{ title }}</h1>
+      <span class="text-[11px] text-shelf-muted">{{ count ? `${count} ${countLabel}` : `${title}收藏` }}</span>
     </div>
 
     <div class="flex items-center gap-2">
@@ -21,7 +21,7 @@ defineEmits<{ "update:query": [value: string]; refresh: [] }>();
           :value="query"
           type="search"
           autocomplete="off"
-          placeholder="搜索角色、创作者或标签"
+          :placeholder="searchPlaceholder"
           class="w-full border-0 bg-transparent p-0 text-[12px] text-shelf-text outline-none placeholder:text-shelf-quiet"
           @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
         >

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openai/tavern-shelf/internal/library"
+	"github.com/openai/tavern-shelf/internal/manifest"
 	_ "modernc.org/sqlite"
 )
 
@@ -68,6 +69,20 @@ CREATE TABLE IF NOT EXISTS inbox_directories (
     path TEXT PRIMARY KEY,
     position INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS resources (
+    id TEXT PRIMARY KEY,
+    source_hash TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    subtype TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    source_filename TEXT NOT NULL,
+    source_rel_path TEXT NOT NULL,
+    source_size INTEGER NOT NULL,
+    imported_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_resources_kind_imported_at ON resources(kind, imported_at DESC);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate library database: %w", err)
@@ -143,6 +158,92 @@ source_size, imported_at, manifest_json
 	)
 	if err != nil {
 		return fmt.Errorf("insert character: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CreateResource(ctx context.Context, resource library.Resource) error {
+	details, err := json.Marshal(struct {
+		Worldbook *manifest.CharacterBook `json:"worldbook,omitempty"`
+		Preset    *manifest.Preset        `json:"preset,omitempty"`
+	}{Worldbook: resource.Worldbook, Preset: resource.Preset})
+	if err != nil {
+		return fmt.Errorf("encode resource details: %w", err)
+	}
+	const query = `INSERT INTO resources (
+id, source_hash, kind, subtype, name, description, source_filename,
+source_rel_path, source_size, imported_at, details_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = s.db.ExecContext(ctx, query,
+		resource.ID, resource.SourceHash, resource.Kind, resource.Subtype, resource.Name,
+		resource.Description, resource.SourceFilename, resource.SourceRelPath,
+		resource.SourceSize, resource.ImportedAt.UTC().Format(time.RFC3339Nano), string(details),
+	)
+	if err != nil {
+		return fmt.Errorf("insert resource: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListResources(ctx context.Context, kind string) ([]library.Resource, error) {
+	query := `SELECT id, source_hash, kind, subtype, name, description, source_filename,
+source_rel_path, source_size, imported_at, details_json FROM resources`
+	args := []any{}
+	if kind != "" {
+		query += " WHERE kind = ?"
+		args = append(args, kind)
+	}
+	query += " ORDER BY imported_at DESC, name COLLATE NOCASE"
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list resources: %w", err)
+	}
+	defer rows.Close()
+	resources := make([]library.Resource, 0)
+	for rows.Next() {
+		resource, err := scanResource(rows)
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, resource)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate resources: %w", err)
+	}
+	return resources, nil
+}
+
+func (s *Store) GetResource(ctx context.Context, id string) (library.Resource, error) {
+	const query = `SELECT id, source_hash, kind, subtype, name, description, source_filename,
+source_rel_path, source_size, imported_at, details_json FROM resources WHERE id = ?`
+	resource, err := scanResource(s.db.QueryRowContext(ctx, query, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return library.Resource{}, ErrNotFound
+	}
+	return resource, err
+}
+
+func (s *Store) GetResourceByHash(ctx context.Context, hash string) (library.Resource, error) {
+	const query = `SELECT id, source_hash, kind, subtype, name, description, source_filename,
+source_rel_path, source_size, imported_at, details_json FROM resources WHERE source_hash = ?`
+	resource, err := scanResource(s.db.QueryRowContext(ctx, query, hash))
+	if errors.Is(err, sql.ErrNoRows) {
+		return library.Resource{}, ErrNotFound
+	}
+	return resource, err
+}
+
+func (s *Store) DeleteResource(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM resources WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("delete resource: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count deleted resources: %w", err)
+	}
+	if count == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -247,6 +348,44 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+func scanResource(row scanner) (library.Resource, error) {
+	var resource library.Resource
+	var imported, detailsJSON string
+	err := row.Scan(
+		&resource.ID, &resource.SourceHash, &resource.Kind, &resource.Subtype,
+		&resource.Name, &resource.Description, &resource.SourceFilename,
+		&resource.SourceRelPath, &resource.SourceSize, &imported, &detailsJSON,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return library.Resource{}, err
+		}
+		return library.Resource{}, fmt.Errorf("scan resource: %w", err)
+	}
+	resource.ImportedAt, err = time.Parse(time.RFC3339Nano, imported)
+	if err != nil {
+		return library.Resource{}, fmt.Errorf("decode resource import time: %w", err)
+	}
+	var details struct {
+		Worldbook json.RawMessage `json:"worldbook"`
+		Preset    json.RawMessage `json:"preset"`
+	}
+	if err := json.Unmarshal([]byte(detailsJSON), &details); err != nil {
+		return library.Resource{}, fmt.Errorf("decode resource details: %w", err)
+	}
+	if len(details.Worldbook) > 0 && string(details.Worldbook) != "null" {
+		if err := json.Unmarshal(details.Worldbook, &resource.Worldbook); err != nil {
+			return library.Resource{}, fmt.Errorf("decode worldbook details: %w", err)
+		}
+	}
+	if len(details.Preset) > 0 && string(details.Preset) != "null" {
+		if err := json.Unmarshal(details.Preset, &resource.Preset); err != nil {
+			return library.Resource{}, fmt.Errorf("decode preset details: %w", err)
+		}
+	}
+	return resource, nil
 }
 
 func scanCharacter(row scanner) (library.Character, error) {

@@ -128,3 +128,35 @@ func TestAddInboxRejectsManagedDirectories(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteResourceOnlyMovesManagedSourceToTrash(t *testing.T) {
+	shelf, err := Open(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	id := "feedface01234567"
+	rel := filepath.Join("fe", id, "source.json")
+	source := filepath.Join(shelf.Paths.Library, rel)
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte(`{"entries":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := shelf.Store.CreateResource(context.Background(), library.Resource{
+		ID: id, SourceHash: id, Kind: library.ResourceWorldbook, Name: "Delete World",
+		SourceFilename: "delete-world.json", SourceRelPath: rel, SourceSize: 14, ImportedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := shelf.DeleteResource(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("managed resource still exists: %v", err)
+	}
+	if _, err := shelf.GetResource(context.Background(), id); err == nil {
+		t.Fatal("deleted resource is still in the database")
+	}
+}

@@ -100,6 +100,20 @@ type Interaction struct {
 	Markers                 []string `json:"markers"`
 }
 
+type Preset struct {
+	Type        string        `json:"type"`
+	FieldCount  int           `json:"fieldCount"`
+	PromptCount int           `json:"promptCount,omitempty"`
+	Fields      []PresetField `json:"fields"`
+	TextBlocks  []PresetField `json:"textBlocks"`
+}
+
+type PresetField struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
 func (c Content) Empty() bool {
 	return c.SchemaVersion < CurrentSchemaVersion || c.Character.Name == ""
 }

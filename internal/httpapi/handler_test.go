@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/openai/tavern-shelf/internal/app"
+	"github.com/openai/tavern-shelf/internal/importer"
+	"github.com/openai/tavern-shelf/internal/library"
 )
 
 func TestInboxDirectoryAPI(t *testing.T) {
@@ -66,5 +70,44 @@ func requestJSON(t *testing.T, handler http.Handler, method, target string, body
 	handler.ServeHTTP(response, request)
 	if response.Code != expected {
 		t.Fatalf("%s %s code = %d, want %d, body = %s", method, target, response.Code, expected, response.Body.String())
+	}
+}
+
+func TestResourceAPI(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	raw := []byte(`{"entries":{"0":{"key":["city"],"comment":"City","content":"A city."}}}`)
+	source := shelf.Paths.Inbox + string(filepath.Separator) + "City.json"
+	if err := os.WriteFile(source, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importer.New(shelf.Paths, shelf.Store).Import(context.Background(), source); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/resources?kind=worldbook", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("resource list code = %d, body = %s", response.Code, response.Body.String())
+	}
+	var resources []library.Resource
+	if err := json.Unmarshal(response.Body.Bytes(), &resources); err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 || resources[0].Kind != library.ResourceWorldbook || resources[0].SourceURL == "" {
+		t.Fatalf("unexpected resource response: %#v", resources)
+	}
+	request = httptest.NewRequest(http.MethodGet, resources[0].SourceURL+"?download=1", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), raw) {
+		t.Fatalf("resource source response code = %d, body = %s", response.Code, response.Body.String())
 	}
 }

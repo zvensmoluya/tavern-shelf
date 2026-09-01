@@ -164,9 +164,9 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 		pending--
 		s.recordImport(now)
 		if result.Duplicate {
-			s.logger.Info("archived duplicate character card", "file", entry.Name(), "character", result.Character.Name)
+			s.logger.Info("archived duplicate Shelf resource", "file", entry.Name(), "kind", result.Kind, "name", result.Name)
 		} else {
-			s.logger.Info("imported character card", "file", entry.Name(), "character", result.Character.Name)
+			s.logger.Info("imported Shelf resource", "file", entry.Name(), "kind", result.Kind, "name", result.Name)
 		}
 		if s.onLibraryHit != nil {
 			s.onLibraryHit()

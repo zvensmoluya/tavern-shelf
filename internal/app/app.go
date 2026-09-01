@@ -192,6 +192,26 @@ func (a *App) Get(ctx context.Context, id string) (library.Character, error) {
 	return character, nil
 }
 
+func (a *App) ListResources(ctx context.Context, kind string) ([]library.Resource, error) {
+	resources, err := a.Store.ListResources(ctx, kind)
+	if err != nil {
+		return nil, err
+	}
+	for index := range resources {
+		enrichResource(&resources[index])
+	}
+	return resources, nil
+}
+
+func (a *App) GetResource(ctx context.Context, id string) (library.Resource, error) {
+	resource, err := a.Store.GetResource(ctx, id)
+	if err != nil {
+		return library.Resource{}, err
+	}
+	enrichResource(&resource)
+	return resource, nil
+}
+
 func (a *App) SourcePath(ctx context.Context, id string) (library.Character, string, error) {
 	character, err := a.Store.Get(ctx, id)
 	if err != nil {
@@ -202,6 +222,18 @@ func (a *App) SourcePath(ctx context.Context, id string) (library.Character, str
 		return library.Character{}, "", errors.New("stored source path escapes the managed Library")
 	}
 	return character, path, nil
+}
+
+func (a *App) ResourceSourcePath(ctx context.Context, id string) (library.Resource, string, error) {
+	resource, err := a.Store.GetResource(ctx, id)
+	if err != nil {
+		return library.Resource{}, "", err
+	}
+	path := filepath.Join(a.Paths.Library, resource.SourceRelPath)
+	if !isWithin(a.Paths.Library, path) {
+		return library.Resource{}, "", errors.New("stored resource source path escapes the managed Library")
+	}
+	return resource, path, nil
 }
 
 // Delete moves a character's managed source to Shelf's Trash before removing
@@ -228,11 +260,37 @@ func (a *App) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (a *App) DeleteResource(ctx context.Context, id string) error {
+	resource, source, err := a.ResourceSourcePath(ctx, id)
+	if err != nil {
+		return err
+	}
+	managedDir := filepath.Dir(source)
+	if filepath.Base(managedDir) != resource.ID || !isWithin(a.Paths.Library, managedDir) {
+		return errors.New("refusing to delete an unexpected managed resource path")
+	}
+	trashDir := filepath.Join(a.Paths.Trash, fmt.Sprintf("%s-%d", resource.ID, time.Now().UnixNano()))
+	if err := os.Rename(managedDir, trashDir); err != nil {
+		return fmt.Errorf("move resource to Shelf Trash: %w", err)
+	}
+	if err := a.Store.DeleteResource(ctx, id); err != nil {
+		if restoreErr := os.Rename(trashDir, managedDir); restoreErr != nil {
+			return fmt.Errorf("delete resource database row: %v; restore source: %w", err, restoreErr)
+		}
+		return err
+	}
+	return nil
+}
+
 func enrich(character *library.Character) {
 	character.SourceURL = "/api/characters/" + character.ID + "/source"
 	if character.SourceIsImage {
 		character.AvatarURL = character.SourceURL
 	}
+}
+
+func enrichResource(resource *library.Resource) {
+	resource.SourceURL = "/api/resources/" + resource.ID + "/source"
 }
 
 func (a *App) backfillManifests(ctx context.Context) error {

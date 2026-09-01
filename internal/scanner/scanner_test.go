@@ -118,3 +118,37 @@ func TestScannerImportsFromMultipleInboxes(t *testing.T) {
 		t.Fatalf("multiple Inbox import mismatch: %#v, %v", characters, err)
 	}
 }
+
+func TestScannerImportsWorldbookAndPreset(t *testing.T) {
+	p, _ := paths.New(t.TempDir())
+	_ = p.Ensure()
+	s, err := store.Open(p.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	scan := New(Config{
+		Inbox: p.Inbox, StableFor: time.Second, RetryAfter: time.Hour,
+		Import: importer.New(p, s), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	files := map[string]string{
+		"world.json":  `{"entries":{"0":{"key":["city"],"comment":"City","content":"A city.","disable":false}}}`,
+		"preset.json": `{"name":"ChatML","input_sequence":"<user>","output_sequence":"<assistant>"}`,
+	}
+	for name, raw := range files {
+		if err := os.WriteFile(filepath.Join(p.Inbox, name), []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t0 := time.Now()
+	if err := scan.ScanOnce(context.Background(), t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := scan.ScanOnce(context.Background(), t0.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	resources, err := s.ListResources(context.Background(), "")
+	if err != nil || len(resources) != 2 {
+		t.Fatalf("resource scan mismatch: %#v, %v", resources, err)
+	}
+}

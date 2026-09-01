@@ -1,4 +1,4 @@
-import type { Character, ShelfStatus } from "@/types";
+import type { Character, ShelfResource, ShelfStatus } from "@/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -11,6 +11,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listCharacters: () => request<Character[]>("/api/characters"),
+  listResources: () => request<ShelfResource[]>("/api/resources"),
   status: () => request<ShelfStatus>("/api/status"),
   chooseInbox: () => request<{ path: string }>("/api/desktop/choose-inbox", { method: "POST" }),
   addInbox: (path: string) => request<void>("/api/inboxes", {
@@ -34,4 +35,5 @@ export const api = {
     body: JSON.stringify({ enabled }),
   }),
   removeCharacter: (id: string) => request<void>(`/api/characters/${id}`, { method: "DELETE" }),
+  removeResource: (id: string) => request<void>(`/api/resources/${id}`, { method: "DELETE" }),
 };

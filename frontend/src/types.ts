@@ -102,6 +102,37 @@ export interface Character {
   manifest: Manifest;
 }
 
+export interface PresetField {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface PresetManifest {
+  type: string;
+  fieldCount: number;
+  promptCount?: number;
+  fields: PresetField[];
+  textBlocks: PresetField[];
+}
+
+export interface ShelfResource {
+  id: string;
+  sourceHash: string;
+  kind: "worldbook" | "preset";
+  subtype?: string;
+  name: string;
+  description?: string;
+  sourceFilename: string;
+  sourceSize: number;
+  importedAt: string;
+  sourceUrl: string;
+  worldbook?: CharacterBook;
+  preset?: PresetManifest;
+}
+
+export type LibrarySection = "characters" | "worldbooks" | "presets";
+
 export interface ShelfStatus {
   paths: { inbox: string; inboxes: string[]; library: string; appData: string; trash: string };
   desktop: { available: boolean; autoStart: boolean };

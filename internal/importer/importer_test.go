@@ -117,6 +117,66 @@ func TestImportFromRejectsFileOutsideConfiguredInbox(t *testing.T) {
 	}
 }
 
+func TestImportStandaloneWorldbook(t *testing.T) {
+	imp, p, s := testImporter(t)
+	source := filepath.Join(p.Inbox, "Eldoria.json")
+	raw := `{"entries":{"0":{"uid":0,"key":["eldoria"],"comment":"Eldoria","content":"A magical forest.","disable":false}}}`
+	if err := os.WriteFile(source, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := imp.Import(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != "worldbook" || result.Resource.Name != "Eldoria" || result.Resource.Worldbook.EntryCount != 1 {
+		t.Fatalf("unexpected worldbook import: %#v", result)
+	}
+	resources, err := s.ListResources(context.Background(), "worldbook")
+	if err != nil || len(resources) != 1 {
+		t.Fatalf("stored worldbooks mismatch: %#v, %v", resources, err)
+	}
+}
+
+func TestImportPreset(t *testing.T) {
+	imp, p, s := testImporter(t)
+	source := filepath.Join(p.Inbox, "ChatML.json")
+	raw := `{"name":"ChatML","input_sequence":"<|user|>","output_sequence":"<|assistant|>","stop_sequence":"</s>"}`
+	if err := os.WriteFile(source, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := imp.Import(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != "preset" || result.Resource.Subtype != "instruct" || result.Resource.Preset == nil {
+		t.Fatalf("unexpected preset import: %#v", result)
+	}
+	resources, err := s.ListResources(context.Background(), "preset")
+	if err != nil || len(resources) != 1 {
+		t.Fatalf("stored presets mismatch: %#v, %v", resources, err)
+	}
+}
+
+func TestEmbeddedWorldbookRemainsPartOfCharacter(t *testing.T) {
+	imp, p, s := testImporter(t)
+	source := filepath.Join(p.Inbox, "mara-with-lore.json")
+	raw := `{"spec":"chara_card_v2","data":{"name":"Mara","character_book":{"name":"Mara lore","entries":[{"keys":["mara"],"content":"Lore","enabled":true}]}}}`
+	if err := os.WriteFile(source, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := imp.Import(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != "character" || !result.Character.HasWorldbook {
+		t.Fatalf("embedded lore was not kept on the character: %#v", result)
+	}
+	resources, err := s.ListResources(context.Background(), "worldbook")
+	if err != nil || len(resources) != 0 {
+		t.Fatalf("embedded lore created a standalone worldbook: %#v, %v", resources, err)
+	}
+}
+
 func testImporter(t *testing.T) (*Importer, paths.Paths, *store.Store) {
 	t.Helper()
 	p, err := paths.New(t.TempDir())

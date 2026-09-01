@@ -2,11 +2,11 @@
 
 Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 角色卡放进任一已配置的 Inbox 后，Shelf 会等待文件写入稳定、解析卡片、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。
 
-当前仓库已经包含 V0 的第一条完整纵向路径：
+当前仓库已经包含本地资源收录的完整纵向路径：
 
 ```text
 Inbox -> stable-file scanner -> PNG / JSON parser -> Managed Library
-      -> SQLite metadata -> Library UI -> character detail / source export
+      -> SQLite metadata -> categorized Library UI -> detail / source export
 ```
 
 Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单实例、静默启动参数、登录后自动启动开关和正常退出。相同的 Core 也通过独立的 headless 入口运行，方便未来部署到 Linux、NAS 或容器。
@@ -77,6 +77,9 @@ Tavern Shelf/
 - 可重建的 Content Manifest：角色设定、开场与 alternate/group greetings、Character Book entry、Regex script 匹配信息、extension/asset 类型，以及 HTML、JavaScript 和已知交互扩展的存在性；
 - 内容哈希去重，同名但内容不同的卡片不会互相覆盖；
 - 可持久化配置多个 Inbox，并在运行中立即添加或移除扫描目录；
+- 独立分发的 SillyTavern 世界书 JSON，按文件名命名并展示条目、关键词、启用状态与正文；
+- SillyTavern 预设 JSON，识别 Chat Completion、Kobold、NovelAI、Text Generation、Context、Instruct、System Prompt 和 Reasoning 子类型；
+- 角色、世界书和预设使用各自独立的 Library 分类；角色卡内嵌世界书只保留在角色详情中，不会重复创建独立世界书；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；
 - 轮询式稳定文件检测，坏文件使用冷却时间，避免高频错误循环。
 
