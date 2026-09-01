@@ -10,8 +10,8 @@ const track = ref<HTMLElement | null>(null);
 
 const selectedEntry = computed(() => props.book.entries[selectedIndex.value]);
 
-watch(() => props.book, () => {
-  selectedIndex.value = 0;
+watch(() => props.book.entries.length, (length) => {
+  selectedIndex.value = length ? Math.min(selectedIndex.value, length - 1) : 0;
 });
 
 function flags(entry: CharacterBookEntry): string[] {

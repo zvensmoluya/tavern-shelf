@@ -135,7 +135,7 @@ function close(open: boolean) {
             </ContentSection>
 
             <ContentSection v-if="manifest.characterBook" :title="manifest.characterBook.name || 'Character Book'" :meta="`${manifest.characterBook.entryCount} 条世界书`">
-              <CharacterBookPanel :book="manifest.characterBook" :character-name="character.name" />
+              <CharacterBookPanel :key="character.id" :book="manifest.characterBook" :character-name="character.name" />
             </ContentSection>
 
             <ContentSection v-if="profile.personality || profile.scenario" title="角色设定">
