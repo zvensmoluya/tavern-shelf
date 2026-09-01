@@ -111,3 +111,53 @@ func TestResourceAPI(t *testing.T) {
 		t.Fatalf("resource source response code = %d, body = %s", response.Code, response.Body.String())
 	}
 }
+
+func TestCreateAndRevokeTransferAPI(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	raw := []byte(`{"spec":"chara_card_v2","spec_version":"2.0","data":{"name":"Share Me"}}`)
+	source := filepath.Join(shelf.Paths.Inbox, "share-me.json")
+	if err := os.WriteFile(source, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := importer.New(shelf.Paths, shelf.Store).Import(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]string{"kind": "character", "id": result.Character.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/transfers", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create transfer code = %d, body = %s", response.Code, response.Body.String())
+	}
+	var session struct {
+		ID        string    `json:"id"`
+		URL       string    `json:"url"`
+		Kind      string    `json:"kind"`
+		ExpiresAt time.Time `json:"expiresAt"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	if session.ID == "" || session.URL == "" || session.Kind != "character" || !session.ExpiresAt.After(time.Now()) {
+		t.Fatalf("unexpected transfer session: %#v", session)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/transfers/"+session.ID, nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("revoke transfer code = %d, body = %s", response.Code, response.Body.String())
+	}
+}

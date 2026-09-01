@@ -1,4 +1,4 @@
-import type { Character, ShelfResource, ShelfStatus } from "@/types";
+import type { Character, ShelfResource, ShelfStatus, TransferSession, TransferTarget } from "@/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -36,4 +36,10 @@ export const api = {
   }),
   removeCharacter: (id: string) => request<void>(`/api/characters/${id}`, { method: "DELETE" }),
   removeResource: (id: string) => request<void>(`/api/resources/${id}`, { method: "DELETE" }),
+  createTransfer: (target: TransferTarget) => request<TransferSession>("/api/transfers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: target.kind, id: target.id }),
+  }),
+  revokeTransfer: (id: string) => request<void>(`/api/transfers/${id}`, { method: "DELETE" }),
 };

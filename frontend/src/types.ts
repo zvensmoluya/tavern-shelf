@@ -133,6 +133,27 @@ export interface ShelfResource {
 
 export type LibrarySection = "characters" | "worldbooks" | "presets";
 
+export interface TransferTarget {
+  kind: "character" | "worldbook" | "preset";
+  id: string;
+  name: string;
+}
+
+export interface TransferSession {
+  id: string;
+  protocol: "tavern-shelf-transfer";
+  version: number;
+  kind: TransferTarget["kind"];
+  subtype?: string;
+  name: string;
+  filename: string;
+  size: number;
+  sha256: string;
+  url: string;
+  addresses: string[];
+  expiresAt: string;
+}
+
 export interface ShelfStatus {
   paths: { inbox: string; inboxes: string[]; library: string; appData: string; trash: string };
   desktop: { available: boolean; autoStart: boolean };

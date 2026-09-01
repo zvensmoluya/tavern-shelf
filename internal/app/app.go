@@ -18,14 +18,16 @@ import (
 	"github.com/openai/tavern-shelf/internal/paths"
 	"github.com/openai/tavern-shelf/internal/scanner"
 	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/openai/tavern-shelf/internal/transfer"
 )
 
 type App struct {
-	Paths   paths.Paths
-	Store   *store.Store
-	Scanner *scanner.Scanner
-	logger  *slog.Logger
-	inboxMu sync.Mutex
+	Paths     paths.Paths
+	Store     *store.Store
+	Scanner   *scanner.Scanner
+	Transfers *transfer.Server
+	logger    *slog.Logger
+	inboxMu   sync.Mutex
 }
 
 type Options struct {
@@ -71,6 +73,7 @@ func Open(options Options) (*App, error) {
 		OnLibraryHit: options.OnLibraryHit,
 	})
 	result := &App{Paths: p, Store: s, Scanner: scan, logger: options.Logger}
+	result.Transfers = transfer.NewServer(result.resolveTransferSource)
 	if err := result.backfillManifests(context.Background()); err != nil {
 		_ = s.Close()
 		return nil, err
@@ -78,7 +81,14 @@ func Open(options Options) (*App, error) {
 	return result, nil
 }
 
-func (a *App) Close() error { return a.Store.Close() }
+func (a *App) Close() error {
+	transferErr := a.Transfers.Close()
+	storeErr := a.Store.Close()
+	if transferErr != nil {
+		return transferErr
+	}
+	return storeErr
+}
 
 func (a *App) Inboxes() []string { return a.Scanner.Inboxes() }
 
@@ -234,6 +244,34 @@ func (a *App) ResourceSourcePath(ctx context.Context, id string) (library.Resour
 		return library.Resource{}, "", errors.New("stored resource source path escapes the managed Library")
 	}
 	return resource, path, nil
+}
+
+func (a *App) resolveTransferSource(ctx context.Context, kind, id string) (transfer.Source, error) {
+	switch kind {
+	case "character":
+		character, path, err := a.SourcePath(ctx, id)
+		if err != nil {
+			return transfer.Source{}, err
+		}
+		return transfer.Source{
+			Kind: kind, ID: character.ID, Name: character.Name, Filename: character.SourceFilename,
+			Path: path, Size: character.SourceSize, SHA256: character.SourceHash,
+		}, nil
+	case library.ResourceWorldbook, library.ResourcePreset:
+		resource, path, err := a.ResourceSourcePath(ctx, id)
+		if err != nil {
+			return transfer.Source{}, err
+		}
+		if resource.Kind != kind {
+			return transfer.Source{}, store.ErrNotFound
+		}
+		return transfer.Source{
+			Kind: resource.Kind, ID: resource.ID, Name: resource.Name, Subtype: resource.Subtype,
+			Filename: resource.SourceFilename, Path: path, Size: resource.SourceSize, SHA256: resource.SourceHash,
+		}, nil
+	default:
+		return transfer.Source{}, errors.New("unsupported transfer resource kind")
+	}
 }
 
 // Delete moves a character's managed source to Shelf's Trash before removing

@@ -11,6 +11,8 @@ Inbox -> stable-file scanner -> PNG / JSON parser -> Managed Library
 
 Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单实例、静默启动参数、登录后自动启动开关和正常退出。相同的 Core 也通过独立的 headless 入口运行，方便未来部署到 Linux、NAS 或容器。
 
+角色卡、独立世界书和预设都可以通过详情页的二维码，在同一局域网内创建一个十分钟有效的单资源传输会话。扫码端对接说明见 [Transfer Protocol v1](docs/transfer-protocol-v1.md)。
+
 ## 本地运行
 
 需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22.12 或更新版本与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。

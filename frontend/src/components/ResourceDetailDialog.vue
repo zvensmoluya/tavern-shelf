@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpenText, CalendarClock, Check, Download, FileJson, Fingerprint, SlidersHorizontal, Trash2, X } from "@lucide/vue";
+import { BookOpenText, CalendarClock, Check, Download, FileJson, Fingerprint, QrCode, SlidersHorizontal, Trash2, X } from "@lucide/vue";
 import {
   DialogClose,
   DialogContent,
@@ -16,7 +16,7 @@ import { formatImported, formatSize } from "@/lib/format";
 import type { ShelfResource } from "@/types";
 
 defineProps<{ open: boolean; resource: ShelfResource | null; deleting: boolean }>();
-const emit = defineEmits<{ "update:open": [open: boolean]; remove: [resource: ShelfResource] }>();
+const emit = defineEmits<{ "update:open": [open: boolean]; remove: [resource: ShelfResource]; transfer: [resource: ShelfResource] }>();
 
 const subtypeLabels: Record<string, string> = {
   openai: "Chat Completion",
@@ -100,6 +100,7 @@ const subtypeLabels: Record<string, string> = {
             </div>
             <div class="mt-5 flex items-center gap-2 border-t border-shelf-line pt-4">
               <a :href="`${resource.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line bg-white/[.025] px-3 text-[11px] font-medium text-shelf-text-soft no-underline transition hover:border-shelf-line-strong hover:bg-white/[.05]"><Download :size="15" />导出原始文件</a>
+              <ShelfButton :icon="QrCode" @click="emit('transfer', resource)">二维码传输</ShelfButton>
               <ShelfButton :icon="Trash2" variant="danger" :disabled="deleting" class="ml-auto" @click="emit('remove', resource)">{{ deleting ? "正在移除…" : "移至 Shelf Trash" }}</ShelfButton>
             </div>
             <p class="mt-4 flex items-center gap-1.5 text-[10px] text-shelf-quiet"><Check :size="13" />只展示确定性字段，不执行预设或世界书内容。</p>

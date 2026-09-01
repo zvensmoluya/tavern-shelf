@@ -9,8 +9,9 @@ import ResourceCard from "@/components/ResourceCard.vue";
 import ResourceDetailDialog from "@/components/ResourceDetailDialog.vue";
 import ShelfRail from "@/components/ShelfRail.vue";
 import ShelfToolsPanel from "@/components/ShelfToolsPanel.vue";
+import TransferDialog from "@/components/TransferDialog.vue";
 import { api } from "@/lib/api";
-import type { Character, LibrarySection, ShelfResource, ShelfStatus } from "@/types";
+import type { Character, LibrarySection, ShelfResource, ShelfStatus, TransferTarget } from "@/types";
 
 const characters = ref<Character[]>([]);
 const resources = ref<ShelfResource[]>([]);
@@ -22,6 +23,7 @@ const refreshing = ref(false);
 const toolsOpen = ref(false);
 const selectedID = ref<string | null>(null);
 const selectedResourceID = ref<string | null>(null);
+const transferTarget = ref<TransferTarget | null>(null);
 const deleting = ref(false);
 const toolBusy = ref(false);
 const notice = ref<{ message: string; error: boolean } | null>(null);
@@ -201,6 +203,14 @@ async function removeResource(resource: ShelfResource) {
   }
 }
 
+function shareCharacter(character: Character) {
+  transferTarget.value = { kind: "character", id: character.id, name: character.name };
+}
+
+function shareResource(resource: ShelfResource) {
+  transferTarget.value = { kind: resource.kind, id: resource.id, name: resource.name };
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && toolsOpen.value) toolsOpen.value = false;
 }
@@ -303,6 +313,7 @@ onBeforeUnmount(() => {
     :deleting="deleting"
     @update:open="open => { if (!open) selectedID = null; }"
     @remove="removeCharacter"
+    @transfer="shareCharacter"
   />
 
   <ResourceDetailDialog
@@ -311,6 +322,13 @@ onBeforeUnmount(() => {
     :deleting="deleting"
     @update:open="open => { if (!open) selectedResourceID = null; }"
     @remove="removeResource"
+    @transfer="shareResource"
+  />
+
+  <TransferDialog
+    :open="Boolean(transferTarget)"
+    :target="transferTarget"
+    @update:open="open => { if (!open) transferTarget = null; }"
   />
 
   <Transition enter-active-class="transition duration-150" enter-from-class="translate-y-2 opacity-0" leave-active-class="transition duration-150" leave-to-class="translate-y-2 opacity-0">

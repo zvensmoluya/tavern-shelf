@@ -14,6 +14,7 @@ import (
 
 	"github.com/openai/tavern-shelf/internal/app"
 	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/openai/tavern-shelf/internal/transfer"
 	"github.com/openai/tavern-shelf/internal/webui"
 )
 
@@ -221,6 +222,37 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", safeDownloadName(resource.SourceFilename)))
 		}
 		http.ServeContent(w, r, resource.SourceFilename, info.ModTime(), file)
+	})
+	mux.HandleFunc("POST /api/transfers", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || strings.TrimSpace(request.ID) == "" {
+			writeError(w, http.StatusBadRequest, errors.New("valid transfer resource kind and ID are required"))
+			return
+		}
+		session, err := application.Transfers.Create(r.Context(), request.Kind, request.ID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, session)
+	})
+	mux.HandleFunc("DELETE /api/transfers/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := application.Transfers.Revoke(r.PathValue("id")); err != nil {
+			if errors.Is(err, transfer.ErrNotFound) {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	fileServer := http.FileServer(http.FS(assets))
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", fileServer))

@@ -10,6 +10,7 @@ import {
   FileText,
   Fingerprint,
   PackageOpen,
+  QrCode,
   Sparkles,
   Trash2,
   UserRound,
@@ -35,7 +36,7 @@ import { characterTone, formatCardDate, formatImported, formatSize, initialOf, m
 import type { Character, RegexScript } from "@/types";
 
 const props = defineProps<{ open: boolean; character: Character | null; deleting: boolean }>();
-const emit = defineEmits<{ "update:open": [open: boolean]; remove: [character: Character] }>();
+const emit = defineEmits<{ "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character] }>();
 
 const manifest = computed(() => props.character ? manifestOf(props.character) : null);
 const profile = computed(() => manifest.value?.character);
@@ -204,6 +205,7 @@ function close(open: boolean) {
                 </div>
                 <div class="mt-5 flex items-center gap-2 border-t border-shelf-line pt-4">
                   <a :href="`${character.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line bg-white/[.025] px-3 text-[11px] font-medium text-shelf-text-soft no-underline transition hover:border-shelf-line-strong hover:bg-white/[.05] hover:text-shelf-text"><Download :size="15" aria-hidden="true" />导出原始卡</a>
+                  <ShelfButton :icon="QrCode" @click="emit('transfer', character)">二维码传输</ShelfButton>
                   <ShelfButton :icon="Trash2" variant="danger" :disabled="deleting" class="ml-auto" @click="emit('remove', character)">{{ deleting ? "正在移除…" : "移至 Shelf Trash" }}</ShelfButton>
                 </div>
               </ShelfDisclosure>
