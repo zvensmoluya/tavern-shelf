@@ -60,12 +60,16 @@ CREATE TABLE IF NOT EXISTS characters (
     source_filename TEXT NOT NULL,
     source_rel_path TEXT NOT NULL,
     source_size INTEGER NOT NULL,
-    imported_at TEXT NOT NULL
+    imported_at TEXT NOT NULL,
+    manifest_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_characters_imported_at ON characters(imported_at DESC);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate library database: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "ALTER TABLE characters ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'"); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return fmt.Errorf("add content manifest column: %w", err)
 	}
 	return nil
 }
@@ -75,18 +79,23 @@ func (s *Store) Create(ctx context.Context, character library.Character) error {
 	if err != nil {
 		return fmt.Errorf("encode tags: %w", err)
 	}
+	contentManifest, err := json.Marshal(character.Manifest)
+	if err != nil {
+		return fmt.Errorf("encode content manifest: %w", err)
+	}
 	const query = `INSERT INTO characters (
 id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive,
 source_format, source_is_image, source_filename, source_rel_path,
-source_size, imported_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+source_size, imported_at, manifest_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = s.db.ExecContext(ctx, query,
 		character.ID, character.SourceHash, character.Name, character.Creator,
 		character.Spec, character.SpecVersion, string(tags), character.HasWorldbook,
 		character.HasRegex, character.HasExtensions, character.HasInteractive,
 		character.SourceFormat, character.SourceIsImage, character.SourceFilename,
 		character.SourceRelPath, character.SourceSize, character.ImportedAt.UTC().Format(time.RFC3339Nano),
+		string(contentManifest),
 	)
 	if err != nil {
 		return fmt.Errorf("insert character: %w", err)
@@ -98,6 +107,7 @@ func (s *Store) List(ctx context.Context) ([]library.Character, error) {
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
+ , manifest_json
 FROM characters ORDER BY imported_at DESC, name COLLATE NOCASE`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -122,6 +132,7 @@ func (s *Store) Get(ctx context.Context, id string) (library.Character, error) {
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
+ , manifest_json
 FROM characters WHERE id = ?`
 	character, err := scanCharacter(s.db.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -134,12 +145,45 @@ func (s *Store) GetByHash(ctx context.Context, hash string) (library.Character, 
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
+ , manifest_json
 FROM characters WHERE source_hash = ?`
 	character, err := scanCharacter(s.db.QueryRowContext(ctx, query, hash))
 	if errors.Is(err, sql.ErrNoRows) {
 		return library.Character{}, ErrNotFound
 	}
 	return character, err
+}
+
+func (s *Store) UpdateParsed(ctx context.Context, character library.Character) error {
+	tags, err := json.Marshal(character.Tags)
+	if err != nil {
+		return fmt.Errorf("encode tags: %w", err)
+	}
+	contentManifest, err := json.Marshal(character.Manifest)
+	if err != nil {
+		return fmt.Errorf("encode content manifest: %w", err)
+	}
+	const query = `UPDATE characters SET
+name = ?, creator = ?, spec = ?, spec_version = ?, tags_json = ?,
+has_worldbook = ?, has_regex = ?, has_extensions = ?, has_interactive = ?,
+source_format = ?, source_is_image = ?, manifest_json = ?
+WHERE id = ?`
+	result, err := s.db.ExecContext(ctx, query,
+		character.Name, character.Creator, character.Spec, character.SpecVersion, string(tags),
+		character.HasWorldbook, character.HasRegex, character.HasExtensions, character.HasInteractive,
+		character.SourceFormat, character.SourceIsImage, string(contentManifest), character.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update parsed character content: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count updated characters: %w", err)
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) Delete(ctx context.Context, id string) error {
@@ -163,13 +207,13 @@ type scanner interface {
 
 func scanCharacter(row scanner) (library.Character, error) {
 	var character library.Character
-	var tags, imported string
+	var tags, imported, contentManifest string
 	var worldbook, regex, extensions, interactive, image bool
 	err := row.Scan(
 		&character.ID, &character.SourceHash, &character.Name, &character.Creator,
 		&character.Spec, &character.SpecVersion, &tags, &worldbook, &regex,
 		&extensions, &interactive, &character.SourceFormat, &image,
-		&character.SourceFilename, &character.SourceRelPath, &character.SourceSize, &imported,
+		&character.SourceFilename, &character.SourceRelPath, &character.SourceSize, &imported, &contentManifest,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -189,6 +233,9 @@ func scanCharacter(row scanner) (library.Character, error) {
 	character.HasExtensions = extensions
 	character.HasInteractive = interactive
 	character.SourceIsImage = image
+	if err := json.Unmarshal([]byte(contentManifest), &character.Manifest); err != nil {
+		return library.Character{}, fmt.Errorf("decode content manifest: %w", err)
+	}
 	return character, nil
 }
 

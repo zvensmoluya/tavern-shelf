@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-shelf-canvas: #0d0f12;
+  --color-shelf-rail: #090b0e;
+  --color-shelf-surface: #15181d;
+  --color-shelf-raised: #1b1f25;
+  --color-shelf-soft: #222730;
+  --color-shelf-line: #292e36;
+  --color-shelf-line-strong: #3a414c;
+  --color-shelf-text: #f3f5f7;
+  --color-shelf-text-soft: #c9cdd3;
+  --color-shelf-muted: #858b96;
+  --color-shelf-quiet: #5f6671;
+  --color-shelf-danger: #df8178;
+  --color-shelf-success: #8ca890;
+  --font-sans: Inter, "Segoe UI Variable", "Segoe UI", "Noto Sans SC", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+  --shadow-shelf-card: 0 14px 34px rgba(0, 0, 0, .3);
+  --shadow-shelf-dialog: 0 35px 100px rgba(0, 0, 0, .72);
+}
+
+@layer base {
+  :root { color-scheme: dark; }
+  html, body, #app { min-width: 320px; min-height: 100%; margin: 0; }
+  body { overflow-x: hidden; background: var(--color-shelf-canvas); color: var(--color-shelf-text); }
+  button, input { font: inherit; }
+  button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid rgba(221, 225, 231, .8); outline-offset: 2px; }
+  ::selection { background: rgba(153, 163, 177, .32); }
+}
+
+@layer utilities {
+  .shelf-scrollbar { scrollbar-color: #3b424d transparent; scrollbar-width: thin; }
+  .shelf-scrollbar::-webkit-scrollbar { width: 9px; }
+  .shelf-scrollbar::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 99px; background: #3b424d; background-clip: padding-box; }
+  .tone-0 { --cover-hue: 198; }
+  .tone-1 { --cover-hue: 218; }
+  .tone-2 { --cover-hue: 242; }
+  .tone-3 { --cover-hue: 268; }
+  .tone-4 { --cover-hue: 294; }
+  .tone-5 { --cover-hue: 326; }
+  .tone-6 { --cover-hue: 164; }
+  .tone-7 { --cover-hue: 42; }
+  .cover-fallback {
+    background:
+      radial-gradient(circle at 62% 22%, hsl(var(--cover-hue, 215) 48% 55% / .22), transparent 36%),
+      linear-gradient(145deg, hsl(var(--cover-hue, 215) 18% 25% / .9), #17191e 68%);
+    color: hsl(var(--cover-hue, 215) 24% 78% / .8);
+  }
+  .detail-cover-shade {
+    background: linear-gradient(90deg, transparent 64%, rgba(21, 24, 29, .9) 100%), linear-gradient(0deg, rgba(8, 10, 13, .48), transparent 34%);
+  }
+}
+
+@keyframes shelf-spin { to { transform: rotate(360deg); } }

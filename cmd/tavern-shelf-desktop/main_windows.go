@@ -78,7 +78,7 @@ func main() {
 	window = wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "library", Title: "Tavern Shelf", Width: 1180, Height: 760,
 		MinWidth: 760, MinHeight: 560, URL: "/", Hidden: *background,
-		BackgroundColour: application.NewRGB(23, 19, 15),
+		BackgroundColour: application.NewRGB(13, 15, 18),
 	})
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		window.Hide()
@@ -115,31 +115,36 @@ func showWindow(window *application.WebviewWindow) {
 
 func makeIcon() []byte {
 	canvas := image.NewRGBA(image.Rect(0, 0, 64, 64))
-	gold := color.RGBA{R: 215, G: 168, B: 92, A: 255}
-	dark := color.RGBA{R: 23, G: 19, B: 15, A: 255}
+	dark := color.RGBA{R: 21, G: 24, B: 29, A: 255}
+	border := color.RGBA{R: 54, G: 59, B: 69, A: 255}
+	light := color.RGBA{R: 232, G: 235, B: 239, A: 255}
+	muted := color.RGBA{R: 104, G: 112, B: 125, A: 255}
 	for y := 4; y < 60; y++ {
 		for x := 4; x < 60; x++ {
-			dx, dy := x-32, y-32
-			if dx*dx+dy*dy <= 28*28 {
+			dx := max(0, max(19-x, x-44))
+			dy := max(0, max(19-y, y-44))
+			if dx*dx+dy*dy <= 15*15 {
 				canvas.SetRGBA(x, y, dark)
-			}
-		}
-	}
-	for x := 14; x < 50; x++ {
-		canvas.SetRGBA(x, 48, gold)
-		canvas.SetRGBA(x, 49, gold)
-	}
-	books := []image.Rectangle{image.Rect(17, 19, 24, 47), image.Rect(27, 14, 35, 47), image.Rect(38, 22, 46, 47)}
-	for _, book := range books {
-		for y := book.Min.Y; y < book.Max.Y; y++ {
-			for x := book.Min.X; x < book.Max.X; x++ {
-				if x == book.Min.X || x == book.Max.X-1 || y == book.Min.Y || y == book.Max.Y-1 {
-					canvas.SetRGBA(x, y, gold)
+				if x < 6 || x >= 58 || y < 6 || y >= 58 {
+					canvas.SetRGBA(x, y, border)
 				}
 			}
 		}
 	}
+	fillRect(canvas, image.Rect(17, 18, 30, 47), light)
+	fillRect(canvas, image.Rect(34, 18, 47, 47), light)
+	fillRect(canvas, image.Rect(21, 23, 26, 42), muted)
+	fillRect(canvas, image.Rect(38, 23, 43, 42), muted)
+	fillRect(canvas, image.Rect(14, 49, 50, 51), muted)
 	var output bytes.Buffer
 	_ = png.Encode(&output, canvas)
 	return output.Bytes()
+}
+
+func fillRect(canvas *image.RGBA, rectangle image.Rectangle, fill color.RGBA) {
+	for y := rectangle.Min.Y; y < rectangle.Max.Y; y++ {
+		for x := rectangle.Min.X; x < rectangle.Max.X; x++ {
+			canvas.SetRGBA(x, y, fill)
+		}
+	}
 }

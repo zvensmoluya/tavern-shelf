@@ -13,7 +13,7 @@ Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单
 
 ## 本地运行
 
-需要 Go 1.26 或更新版本。
+需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22 与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。
 
 Headless 模式：
 
@@ -31,6 +31,15 @@ Windows 桌面开发模式：
 
 ```powershell
 go run ./cmd/tavern-shelf-desktop
+```
+
+前端源码位于 `frontend/`，使用 Vue 3、Vite、TypeScript、Tailwind CSS、Reka UI primitives 和 Lucide。开发前端时可分别启动 Go headless 服务和 Vite：
+
+```powershell
+go run ./cmd/tavern-shelf
+cd frontend
+npm install
+npm run dev
 ```
 
 桌面入口使用 Wails v3 提供 WebView2 窗口、系统托盘和单实例能力。最终用户构建不带控制台窗口：
@@ -61,17 +70,23 @@ Tavern Shelf/
 ## 当前支持
 
 - SillyTavern JSON Character Card，包括常见 v1 和 v2 外层结构；
-- PNG `tEXt/chara` 元数据，以及未压缩或 zlib 压缩的 `iTXt` 元数据；
-- name、creator、spec/version、tags 和 Worldbook / Regex / extension / interactive 特征；
+- Character Card V2 / V3 的标准结构化内容，并优先读取 PNG 中的 `ccv3` 数据；
+- PNG `tEXt/chara`、`tEXt/ccv3` 元数据，以及未压缩或 zlib 压缩的 `iTXt` 元数据；
+- 可重建的 Content Manifest：角色设定、开场与 alternate/group greetings、Character Book entry、Regex script 匹配信息、extension/asset 类型，以及 HTML、JavaScript 和已知交互扩展的存在性；
 - 内容哈希去重，同名但内容不同的卡片不会互相覆盖；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；
 - 轮询式稳定文件检测，坏文件使用冷却时间，避免高频错误循环。
+
+Content Manifest 只对确定性字段做结构化投影，不执行卡片中的 HTML/JavaScript，也不尝试解释任意脚本语义。原始角色卡始终是 source of truth；旧 Library 会在升级后从 Managed Source 自动补建 Manifest。
 
 V0 的边界和非目标见 [tavern-shelf-seed.md](tavern-shelf-seed.md)。
 
 ## 验证
 
 ```powershell
+cd frontend
+npm run build
+cd ..
 go test ./...
 go build ./...
 ```

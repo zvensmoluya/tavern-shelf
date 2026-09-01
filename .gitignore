@@ -8,6 +8,8 @@
 /bin/
 /build/bin/
 *.exe
+/frontend/node_modules/
+/frontend/.vite/
 
 # Tools and editors
 .DS_Store

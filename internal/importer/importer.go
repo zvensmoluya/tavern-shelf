@@ -113,6 +113,7 @@ func (i *Importer) Import(ctx context.Context, source string) (Result, error) {
 		SourceRelPath:  relSource,
 		SourceSize:     info.Size(),
 		ImportedAt:     i.now().UTC(),
+		Manifest:       metadata.Manifest,
 	}
 	if err := i.store.Create(ctx, character); err != nil {
 		return Result{}, err

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/openai/tavern-shelf/internal/card"
 	"github.com/openai/tavern-shelf/internal/importer"
 	"github.com/openai/tavern-shelf/internal/library"
 	"github.com/openai/tavern-shelf/internal/paths"
@@ -20,6 +21,7 @@ type App struct {
 	Paths   paths.Paths
 	Store   *store.Store
 	Scanner *scanner.Scanner
+	logger  *slog.Logger
 }
 
 type Options struct {
@@ -32,6 +34,9 @@ type Options struct {
 }
 
 func Open(options Options) (*App, error) {
+	if options.Logger == nil {
+		options.Logger = slog.Default()
+	}
 	p, err := paths.New(options.DataDir)
 	if err != nil {
 		return nil, err
@@ -49,7 +54,12 @@ func Open(options Options) (*App, error) {
 		RetryAfter: options.RetryAfter, Import: imp, Logger: options.Logger,
 		OnLibraryHit: options.OnLibraryHit,
 	})
-	return &App{Paths: p, Store: s, Scanner: scan}, nil
+	result := &App{Paths: p, Store: s, Scanner: scan, logger: options.Logger}
+	if err := result.backfillManifests(context.Background()); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return result, nil
 }
 
 func (a *App) Close() error { return a.Store.Close() }
@@ -115,6 +125,39 @@ func enrich(character *library.Character) {
 	if character.SourceIsImage {
 		character.AvatarURL = character.SourceURL
 	}
+}
+
+func (a *App) backfillManifests(ctx context.Context) error {
+	characters, err := a.Store.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list characters for content manifest migration: %w", err)
+	}
+	for _, character := range characters {
+		if !character.Manifest.Empty() {
+			continue
+		}
+		path := filepath.Join(a.Paths.Library, character.SourceRelPath)
+		if !isWithin(a.Paths.Library, path) {
+			a.logger.Warn("skip manifest migration for unsafe source path", "character", character.ID)
+			continue
+		}
+		parsed, err := card.ParseFile(path)
+		if err != nil {
+			a.logger.Warn("could not rebuild character content manifest", "character", character.ID, "error", err)
+			continue
+		}
+		if err := a.Store.UpdateParsed(ctx, library.Character{
+			ID: character.ID, Name: parsed.Name, Creator: parsed.Creator,
+			Spec: parsed.Spec, SpecVersion: parsed.SpecVersion, Tags: parsed.Tags,
+			HasWorldbook: parsed.HasWorldbook, HasRegex: parsed.HasRegex,
+			HasExtensions: parsed.HasExtensions, HasInteractive: parsed.HasInteractive,
+			SourceFormat: parsed.SourceFormat, SourceIsImage: parsed.SourceIsImage,
+			Manifest: parsed.Manifest,
+		}); err != nil {
+			return fmt.Errorf("save rebuilt content manifest for %q: %w", character.ID, err)
+		}
+	}
+	return nil
 }
 
 func isWithin(parent, child string) bool {
