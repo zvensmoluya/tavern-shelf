@@ -10,11 +10,11 @@
   --color-shelf-line-strong: #3a414c;
   --color-shelf-text: #f3f5f7;
   --color-shelf-text-soft: #c9cdd3;
-  --color-shelf-muted: #858b96;
-  --color-shelf-quiet: #5f6671;
+  --color-shelf-muted: #9ba1ab;
+  --color-shelf-quiet: #737a85;
   --color-shelf-danger: #df8178;
   --color-shelf-success: #8ca890;
-  --font-sans: Inter, "Segoe UI Variable", "Segoe UI", "Noto Sans SC", sans-serif;
+  --font-sans: Inter, "Segoe UI Variable", "Segoe UI", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
   --font-mono: "Cascadia Mono", Consolas, monospace;
   --shadow-shelf-card: 0 14px 34px rgba(0, 0, 0, .3);
   --shadow-shelf-dialog: 0 35px 100px rgba(0, 0, 0, .72);

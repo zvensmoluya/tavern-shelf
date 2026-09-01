@@ -23,15 +23,15 @@ const preview = computed(() => {
     <p
       class="whitespace-pre-wrap"
       :class="{
-        'text-[13px] leading-7 text-shelf-text-soft': variant === 'lead',
-        'rounded-r-lg border-l-2 border-shelf-line-strong bg-white/[.025] px-4 py-3.5 text-[12px] leading-6 text-shelf-text-soft': variant === 'opening',
-        'text-[12px] leading-7 text-shelf-text-soft/85': variant === 'prose',
+        'text-[14px] leading-[1.85] text-shelf-text-soft': variant === 'lead',
+        'rounded-r-lg border-l-2 border-shelf-line-strong bg-white/[.03] px-4 py-4 text-[13px] leading-[1.8] text-shelf-text-soft': variant === 'opening',
+        'text-[13px] leading-[1.85] text-shelf-text-soft/90': variant === 'prose',
       }"
     >{{ preview }}</p>
     <button
       v-if="truncated"
       type="button"
-      class="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-shelf-line px-2.5 text-[10px] text-shelf-muted transition hover:border-shelf-line-strong hover:text-shelf-text"
+      class="mt-3 inline-flex h-9 items-center gap-1.5 rounded-md border border-shelf-line px-3 text-[11px] text-shelf-muted transition hover:border-shelf-line-strong hover:text-shelf-text"
       :aria-expanded="expanded"
       @click="expanded = !expanded"
     >

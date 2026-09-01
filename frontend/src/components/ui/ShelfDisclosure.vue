@@ -19,11 +19,11 @@ const open = ref(props.defaultOpen);
       <button
         type="button"
         class="group flex w-full items-center gap-3 rounded-lg text-left text-shelf-text-soft transition hover:bg-white/[.025] hover:text-shelf-text"
-        :class="compact ? 'min-h-10 px-3 py-2' : 'min-h-11 px-3.5 py-2.5'"
+        :class="compact ? 'min-h-11 px-3.5 py-2.5' : 'min-h-12 px-4 py-3'"
       >
         <slot name="leading" />
-        <span class="min-w-0 flex-1 truncate text-[11px] font-medium">{{ title }}</span>
-        <span v-if="meta" class="shrink-0 text-[9px] text-shelf-quiet">{{ meta }}</span>
+        <span class="min-w-0 flex-1 truncate text-[12px] font-medium">{{ title }}</span>
+        <span v-if="meta" class="shrink-0 text-[10px] text-shelf-muted">{{ meta }}</span>
         <ChevronDown
           :size="15"
           :stroke-width="1.7"
@@ -33,7 +33,7 @@ const open = ref(props.defaultOpen);
         />
       </button>
     </CollapsibleTrigger>
-    <CollapsibleContent class="border-t border-shelf-line px-3.5 py-3 text-[11px] leading-7 text-shelf-muted">
+    <CollapsibleContent class="border-t border-shelf-line px-4 py-3.5 text-[12px] leading-[1.85] text-shelf-muted">
       <slot />
     </CollapsibleContent>
   </CollapsibleRoot>
