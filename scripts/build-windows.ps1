@@ -10,6 +10,7 @@ $outputDirectory = Join-Path $repositoryRoot 'build\bin'
 $desktopExecutable = Join-Path $outputDirectory 'TavernShelf.exe'
 $headlessExecutable = Join-Path $outputDirectory 'tavern-shelf-server.exe'
 $windowsIcon = Join-Path $repositoryRoot 'build\windows\TavernShelf.ico'
+$windowsResource = Join-Path $repositoryRoot 'cmd\tavern-shelf-desktop\rsrc_windows_amd64.syso'
 $versionFile = Join-Path $repositoryRoot 'VERSION'
 $releaseVersion = if ($Version) { $Version.TrimStart('v') } else { (Get-Content -Raw -LiteralPath $versionFile).Trim() }
 if ($releaseVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release version: $releaseVersion" }
@@ -21,6 +22,9 @@ Push-Location $repositoryRoot
 try {
     go run ./scripts/generate-windows-icon.go $windowsIcon
     if ($LASTEXITCODE -ne 0) { throw 'Windows icon generation failed' }
+
+    go run github.com/akavel/rsrc@v0.10.2 -arch amd64 -ico $windowsIcon -o $windowsResource
+    if ($LASTEXITCODE -ne 0) { throw 'Windows executable resource generation failed' }
 
     Push-Location $frontendDirectory
     try {
@@ -54,6 +58,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
     }
 } finally {
+    if (Test-Path -LiteralPath $windowsResource) {
+        Remove-Item -LiteralPath $windowsResource -Force
+    }
     Pop-Location
 }
 
