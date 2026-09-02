@@ -215,7 +215,18 @@ func (a *App) List(ctx context.Context) ([]library.Character, error) {
 	if err != nil {
 		return nil, err
 	}
+	organizations, err := a.Store.CharacterOrganizations(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for index := range characters {
+		organization := organizations[characters[index].ID]
+		characters[index].Favorite = organization.Favorite
+		characters[index].Note = organization.Note
+		characters[index].CollectionIDs = organization.CollectionIDs
+		if characters[index].CollectionIDs == nil {
+			characters[index].CollectionIDs = []string{}
+		}
 		enrich(&characters[index])
 	}
 	return characters, nil
@@ -226,6 +237,13 @@ func (a *App) Get(ctx context.Context, id string) (library.Character, error) {
 	if err != nil {
 		return library.Character{}, err
 	}
+	organization, err := a.Store.CharacterOrganization(ctx, id)
+	if err != nil {
+		return library.Character{}, err
+	}
+	character.Favorite = organization.Favorite
+	character.Note = organization.Note
+	character.CollectionIDs = organization.CollectionIDs
 	enrich(&character)
 	return character, nil
 }

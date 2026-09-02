@@ -100,6 +100,22 @@ export interface Character {
   avatarUrl?: string;
   sourceUrl: string;
   manifest: Manifest;
+  favorite: boolean;
+  note?: string;
+  collectionIds: string[];
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  characterCount: number;
+  createdAt: string;
+}
+
+export interface CharacterOrganization {
+  favorite: boolean;
+  note: string;
+  collectionIds: string[];
 }
 
 export interface PresetField {

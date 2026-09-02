@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   Braces,
   CalendarClock,
@@ -9,9 +9,12 @@ import {
   FileCode2,
   FileText,
   Fingerprint,
+  FolderHeart,
   PackageOpen,
   QrCode,
+  Save,
   Sparkles,
+  Star,
   Trash2,
   UserRound,
   X,
@@ -33,10 +36,20 @@ import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfDisclosure from "@/components/ui/ShelfDisclosure.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 import { characterTone, formatCardDate, formatImported, formatSize, initialOf, manifestOf } from "@/lib/format";
-import type { Character, RegexScript } from "@/types";
+import type { Character, CharacterOrganization, Collection, RegexScript } from "@/types";
 
-const props = defineProps<{ open: boolean; character: Character | null; deleting: boolean }>();
-const emit = defineEmits<{ "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character] }>();
+const props = defineProps<{ open: boolean; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
+const emit = defineEmits<{ "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character]; organize: [organization: CharacterOrganization] }>();
+
+const favorite = ref(false);
+const note = ref("");
+const collectionIDs = ref<string[]>([]);
+
+watch(() => props.character?.id, () => {
+  favorite.value = props.character?.favorite || false;
+  note.value = props.character?.note || "";
+  collectionIDs.value = [...(props.character?.collectionIds || [])];
+}, { immediate: true });
 
 const manifest = computed(() => props.character ? manifestOf(props.character) : null);
 const profile = computed(() => manifest.value?.character);
@@ -73,6 +86,14 @@ function regexFlags(script: RegexScript): string[] {
 
 function close(open: boolean) {
   emit("update:open", open);
+}
+
+function toggleCollection(id: string) {
+  collectionIDs.value = collectionIDs.value.includes(id) ? collectionIDs.value.filter(value => value !== id) : [...collectionIDs.value, id];
+}
+
+function saveOrganization() {
+  emit("organize", { favorite: favorite.value, note: note.value, collectionIds: collectionIDs.value });
 }
 </script>
 
@@ -118,6 +139,29 @@ function close(open: boolean) {
                 <span class="text-[10px] text-shelf-muted">{{ label }}</span>
               </div>
             </div>
+
+            <ContentSection title="我的收藏信息" meta="仅保存在 Shelf，不改写角色卡">
+              <div class="rounded-xl border border-shelf-line bg-white/[.018] p-4">
+                <button type="button" class="mb-4 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] transition" :class="favorite ? 'border-amber-300/30 bg-amber-300/[.08] text-amber-200' : 'border-shelf-line text-shelf-muted hover:text-shelf-text-soft'" @click="favorite = !favorite">
+                  <Star :size="15" :fill="favorite ? 'currentColor' : 'none'" aria-hidden="true" />{{ favorite ? "已收藏" : "加入收藏" }}
+                </button>
+                <div v-if="collections.length" class="mb-4">
+                  <p class="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-shelf-muted"><FolderHeart :size="14" aria-hidden="true" />收藏夹</p>
+                  <div class="flex flex-wrap gap-2">
+                    <label v-for="collection in collections" :key="collection.id" class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-shelf-line px-2.5 py-2 text-[10px] text-shelf-muted transition hover:border-shelf-line-strong hover:text-shelf-text-soft">
+                      <input type="checkbox" class="accent-amber-300" :checked="collectionIDs.includes(collection.id)" @change="toggleCollection(collection.id)">{{ collection.name }}
+                    </label>
+                  </div>
+                </div>
+                <label class="block text-[10px] font-semibold text-shelf-muted">私人备注
+                  <textarea v-model="note" maxlength="20000" rows="4" placeholder="玩法提示、推荐模型、使用体验……" class="mt-2 block w-full resize-y rounded-lg border border-shelf-line bg-black/20 px-3 py-2.5 text-[11px] font-normal leading-5 text-shelf-text-soft outline-none placeholder:text-shelf-quiet focus:border-shelf-line-strong" />
+                </label>
+                <div class="mt-3 flex items-center justify-between gap-3">
+                  <span class="text-[9px] text-shelf-quiet">{{ note.length }} / 20,000</span>
+                  <ShelfButton :icon="Save" :disabled="savingOrganization" @click="saveOrganization">{{ savingOrganization ? "正在保存…" : "保存收藏信息" }}</ShelfButton>
+                </div>
+              </div>
+            </ContentSection>
 
             <StructuredDescription v-if="profile.description" :text="profile.description" :character-name="character.name" />
 

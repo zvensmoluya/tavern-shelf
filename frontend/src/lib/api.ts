@@ -1,4 +1,4 @@
-import type { Character, ConnectorPairing, ConnectorStatus, ImportResult, RestoreSummary, ShelfResource, ShelfStatus, TransferSession, TransferTarget, TrashItem } from "@/types";
+import type { Character, CharacterOrganization, Collection, ConnectorPairing, ConnectorStatus, ImportResult, RestoreSummary, ShelfResource, ShelfStatus, TransferSession, TransferTarget, TrashItem } from "@/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -11,6 +11,23 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listCharacters: () => request<Character[]>("/api/characters"),
+  organizeCharacter: (id: string, organization: CharacterOrganization) => request<Character>(`/api/characters/${encodeURIComponent(id)}/organization`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(organization),
+  }),
+  listCollections: () => request<Collection[]>("/api/collections"),
+  createCollection: (name: string) => request<Collection>("/api/collections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }),
+  renameCollection: (id: string, name: string) => request<void>(`/api/collections/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }),
+  removeCollection: (id: string) => request<void>(`/api/collections/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listResources: () => request<ShelfResource[]>("/api/resources"),
   status: () => request<ShelfStatus>("/api/status"),
   connectorStatus: () => request<ConnectorStatus>("/api/connector"),

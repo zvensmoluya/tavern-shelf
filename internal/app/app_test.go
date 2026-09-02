@@ -36,6 +36,55 @@ func TestImportUploadCopiesIntoManagedLibrary(t *testing.T) {
 	}
 }
 
+func TestCharacterOrganizationSurvivesTrashRestore(t *testing.T) {
+	shelf, err := Open(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	result, err := shelf.ImportUpload(context.Background(), "Collected.json", bytes.NewBufferString(testCharacterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := shelf.CreateCollection(context.Background(), "Favorites for RP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := shelf.CreateCollection(context.Background(), "To Try")
+	if err != nil {
+		t.Fatal(err)
+	}
+	organization := library.CharacterOrganization{Favorite: true, Note: "Use the patient model.", CollectionIDs: []string{first.ID, second.ID}}
+	if err := shelf.OrganizeCharacter(context.Background(), result.Character.ID, organization); err != nil {
+		t.Fatal(err)
+	}
+	character, err := shelf.Get(context.Background(), result.Character.ID)
+	if err != nil || !character.Favorite || character.Note != organization.Note || len(character.CollectionIDs) != 2 {
+		t.Fatalf("unexpected character organization: %#v, %v", character, err)
+	}
+	if err := shelf.Delete(context.Background(), character.ID); err != nil {
+		t.Fatal(err)
+	}
+	trash, err := shelf.ListTrash()
+	if err != nil || len(trash) != 1 {
+		t.Fatalf("unexpected Trash: %#v, %v", trash, err)
+	}
+	if _, err := shelf.RestoreTrash(context.Background(), trash[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := shelf.Get(context.Background(), character.ID)
+	if err != nil || !restored.Favorite || restored.Note != organization.Note || len(restored.CollectionIDs) != 2 {
+		t.Fatalf("organization did not survive Trash restore: %#v, %v", restored, err)
+	}
+	if err := shelf.DeleteCollection(context.Background(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err = shelf.Get(context.Background(), character.ID)
+	if err != nil || len(restored.CollectionIDs) != 1 || restored.CollectionIDs[0] != second.ID {
+		t.Fatalf("deleting collection changed character incorrectly: %#v, %v", restored, err)
+	}
+}
+
 func TestOneShotScanCopiesWithoutRememberingDirectory(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()

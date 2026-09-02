@@ -75,13 +75,18 @@ func ConnectorHandler(application *app.App) http.Handler {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		for index := range characters {
-			characters[index].SourceURL = "/connector/v1/characters/" + characters[index].ID + "/source"
-			if characters[index].SourceIsImage {
-				characters[index].AvatarURL = characters[index].SourceURL
-			}
+		result := make([]map[string]any, 0, len(characters))
+		for _, character := range characters {
+			sourceURL := "/connector/v1/characters/" + character.ID + "/source"
+			result = append(result, map[string]any{
+				"id": character.ID, "name": character.Name, "creator": character.Creator,
+				"tags": character.Tags, "sourceFormat": character.SourceFormat,
+				"sourceIsImage": character.SourceIsImage, "sourceFilename": character.SourceFilename,
+				"sourceSize": character.SourceSize, "importedAt": character.ImportedAt,
+				"sourceUrl": sourceURL,
+			})
 		}
-		writeJSON(w, http.StatusOK, characters)
+		writeJSON(w, http.StatusOK, result)
 	})))
 	mux.Handle("GET /connector/v1/characters/{id}/source", requireConnectorAuth(application, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		character, sourcePath, err := application.SourcePath(r.Context(), r.PathValue("id"))

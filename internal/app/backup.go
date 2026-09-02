@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,15 +14,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/openai/tavern-shelf/internal/library"
 )
 
 const (
 	backupFormat                = "tavern-shelf-backup"
-	backupVersion               = 1
+	backupVersion               = 2
 	MaxBackupSize         int64 = 64 << 30
 	maxBackupItemSize           = 4 << 30
 	maxBackupItems              = 100_000
-	maxBackupManifestSize       = 8 << 20
+	maxBackupCollections        = 10_000
+	maxBackupManifestSize       = 64 << 20
 )
 
 var errBackupItemTooLarge = errors.New("backup item exceeds the 4 GiB limit")
@@ -33,13 +37,22 @@ type BackupItem struct {
 	SourceHash     string    `json:"sourceHash"`
 	ImportedAt     time.Time `json:"importedAt"`
 	ArchivePath    string    `json:"archivePath"`
+	Favorite       bool      `json:"favorite,omitempty"`
+	Note           string    `json:"note,omitempty"`
+	CollectionIDs  []string  `json:"collectionIds,omitempty"`
+}
+
+type BackupCollection struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type BackupManifest struct {
-	Format    string       `json:"format"`
-	Version   int          `json:"version"`
-	CreatedAt time.Time    `json:"createdAt"`
-	Items     []BackupItem `json:"items"`
+	Format      string             `json:"format"`
+	Version     int                `json:"version"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Collections []BackupCollection `json:"collections,omitempty"`
+	Items       []BackupItem       `json:"items"`
 }
 
 type BackupSummary struct {
@@ -60,7 +73,7 @@ type RestoreSummary struct {
 }
 
 func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSummary, error) {
-	characters, err := a.Store.List(ctx)
+	characters, err := a.List(ctx)
 	if err != nil {
 		return BackupSummary{}, fmt.Errorf("list characters for backup: %w", err)
 	}
@@ -70,6 +83,14 @@ func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSum
 	}
 	archive := zip.NewWriter(destination)
 	manifest := BackupManifest{Format: backupFormat, Version: backupVersion, CreatedAt: time.Now().UTC()}
+	collections, err := a.Collections(ctx)
+	if err != nil {
+		_ = archive.Close()
+		return BackupSummary{}, fmt.Errorf("list collections for backup: %w", err)
+	}
+	for _, collection := range collections {
+		manifest.Collections = append(manifest.Collections, BackupCollection{ID: collection.ID, Name: collection.Name})
+	}
 	for _, character := range characters {
 		path := filepath.Join(a.Paths.Library, character.SourceRelPath)
 		if !isWithin(a.Paths.Library, path) {
@@ -80,6 +101,7 @@ func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSum
 			Kind: "character", Name: character.Name, SourceFilename: character.SourceFilename,
 			SourceHash: character.SourceHash, ImportedAt: character.ImportedAt,
 			ArchivePath: backupSourcePath("character", character.SourceHash, path),
+			Favorite:    character.Favorite, Note: character.Note, CollectionIDs: character.CollectionIDs,
 		}
 		if err := addBackupSource(archive, item.ArchivePath, path, item.SourceHash); err != nil {
 			_ = archive.Close()
@@ -104,6 +126,17 @@ func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSum
 		}
 		manifest.Items = append(manifest.Items, item)
 	}
+	var encodedManifest bytes.Buffer
+	encoder := json.NewEncoder(&encodedManifest)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(manifest); err != nil {
+		_ = archive.Close()
+		return BackupSummary{}, fmt.Errorf("encode backup manifest: %w", err)
+	}
+	if encodedManifest.Len() > maxBackupManifestSize {
+		_ = archive.Close()
+		return BackupSummary{}, errors.New("backup metadata exceeds the 64 MiB limit")
+	}
 	header := &zip.FileHeader{Name: "backup.json", Method: zip.Deflate}
 	header.SetModTime(manifest.CreatedAt)
 	entry, err := archive.CreateHeader(header)
@@ -111,9 +144,7 @@ func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSum
 		_ = archive.Close()
 		return BackupSummary{}, fmt.Errorf("create backup manifest: %w", err)
 	}
-	encoder := json.NewEncoder(entry)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(manifest); err != nil {
+	if _, err := io.Copy(entry, &encodedManifest); err != nil {
 		_ = archive.Close()
 		return BackupSummary{}, fmt.Errorf("write backup manifest: %w", err)
 	}
@@ -153,6 +184,28 @@ func (a *App) RestoreBackup(ctx context.Context, source io.Reader) (RestoreSumma
 	if err := validateBackupSources(manifest, sources); err != nil {
 		return RestoreSummary{}, err
 	}
+	collectionIDs := make(map[string]string, len(manifest.Collections))
+	existingCollections, err := a.Collections(ctx)
+	if err != nil {
+		return RestoreSummary{}, fmt.Errorf("list collections before restore: %w", err)
+	}
+	for _, backupCollection := range manifest.Collections {
+		for _, existing := range existingCollections {
+			if strings.EqualFold(existing.Name, backupCollection.Name) {
+				collectionIDs[backupCollection.ID] = existing.ID
+				break
+			}
+		}
+		if collectionIDs[backupCollection.ID] != "" {
+			continue
+		}
+		collection, createErr := a.CreateCollection(ctx, backupCollection.Name)
+		if createErr != nil {
+			return RestoreSummary{}, fmt.Errorf("restore collection %q: %w", backupCollection.Name, createErr)
+		}
+		collectionIDs[backupCollection.ID] = collection.ID
+		existingCollections = append(existingCollections, collection)
+	}
 	summary := RestoreSummary{Total: len(manifest.Items)}
 	for _, item := range manifest.Items {
 		entry := sources[item.ArchivePath]
@@ -180,11 +233,22 @@ func (a *App) RestoreBackup(ctx context.Context, source io.Reader) (RestoreSumma
 		}
 		if result.Duplicate {
 			summary.Duplicates++
-			continue
+		} else {
+			summary.Imported++
+			if !item.ImportedAt.IsZero() {
+				_ = a.Store.SetImportedAt(ctx, result.Kind, id, item.ImportedAt)
+			}
 		}
-		summary.Imported++
-		if !item.ImportedAt.IsZero() {
-			_ = a.Store.SetImportedAt(ctx, result.Kind, id, item.ImportedAt)
+		if item.Kind == "character" && manifest.Version >= 2 {
+			assigned := make([]string, 0, len(item.CollectionIDs))
+			for _, backupID := range item.CollectionIDs {
+				if restoredID := collectionIDs[backupID]; restoredID != "" {
+					assigned = append(assigned, restoredID)
+				}
+			}
+			if err := a.OrganizeCharacter(ctx, id, library.CharacterOrganization{Favorite: item.Favorite, Note: item.Note, CollectionIDs: assigned}); err != nil {
+				summary.addIssue(item.SourceFilename, fmt.Errorf("restore organization: %w", err))
+			}
 		}
 	}
 	return summary, nil
@@ -250,17 +314,37 @@ func readBackupManifest(files []*zip.File) (BackupManifest, map[string]*zip.File
 	if err := decoder.Decode(&manifest); err != nil {
 		return BackupManifest{}, nil, fmt.Errorf("decode backup manifest: %w", err)
 	}
-	if manifest.Format != backupFormat || manifest.Version != backupVersion {
+	if manifest.Format != backupFormat || (manifest.Version != 1 && manifest.Version != backupVersion) {
 		return BackupManifest{}, nil, errors.New("unsupported Tavern Shelf backup format or version")
 	}
 	if len(manifest.Items) > maxBackupItems {
 		return BackupManifest{}, nil, errors.New("backup contains too many items")
+	}
+	if len(manifest.Collections) > maxBackupCollections {
+		return BackupManifest{}, nil, errors.New("backup contains too many collections")
+	}
+	collectionIDs := make(map[string]struct{}, len(manifest.Collections))
+	for _, collection := range manifest.Collections {
+		if strings.TrimSpace(collection.ID) == "" {
+			return BackupManifest{}, nil, errors.New("backup contains a collection without an ID")
+		}
+		if _, exists := collectionIDs[collection.ID]; exists {
+			return BackupManifest{}, nil, fmt.Errorf("backup contains duplicate collection ID %q", collection.ID)
+		}
+		if _, err := validCollectionName(collection.Name); err != nil {
+			return BackupManifest{}, nil, fmt.Errorf("backup collection %q is invalid: %w", collection.ID, err)
+		}
+		collectionIDs[collection.ID] = struct{}{}
 	}
 	return manifest, sources, nil
 }
 
 func validateBackupSources(manifest BackupManifest, sources map[string]*zip.File) error {
 	seen := make(map[string]struct{}, len(manifest.Items))
+	collectionIDs := make(map[string]struct{}, len(manifest.Collections))
+	for _, collection := range manifest.Collections {
+		collectionIDs[collection.ID] = struct{}{}
+	}
 	var expandedSize uint64
 	for _, item := range manifest.Items {
 		if item.Kind != "character" && item.Kind != "worldbook" && item.Kind != "preset" {
@@ -274,6 +358,14 @@ func validateBackupSources(manifest BackupManifest, sources map[string]*zip.File
 		}
 		if item.SourceFilename != filepath.Base(strings.ReplaceAll(item.SourceFilename, "\\", "/")) {
 			return fmt.Errorf("backup item has an unsafe source filename %q", item.SourceFilename)
+		}
+		if len(item.CollectionIDs) > maxBackupCollections {
+			return fmt.Errorf("backup item %q belongs to too many collections", item.SourceFilename)
+		}
+		for _, collectionID := range item.CollectionIDs {
+			if _, ok := collectionIDs[collectionID]; !ok {
+				return fmt.Errorf("backup item %q references an unknown collection", item.SourceFilename)
+			}
 		}
 		if _, exists := seen[item.ArchivePath]; exists {
 			return fmt.Errorf("backup contains duplicate source entry %q", item.ArchivePath)

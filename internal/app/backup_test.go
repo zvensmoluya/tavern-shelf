@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/openai/tavern-shelf/internal/library"
 )
 
 func TestBackupRestoreMergesLibraryByContentHash(t *testing.T) {
@@ -16,7 +18,15 @@ func TestBackupRestoreMergesLibraryByContentHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = source.Close() })
-	if _, err := source.ImportUpload(context.Background(), "Collected.json", bytes.NewBufferString(testCharacterJSON)); err != nil {
+	imported, err := source.ImportUpload(context.Background(), "Collected.json", bytes.NewBufferString(testCharacterJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	collection, err := source.CreateCollection(context.Background(), "Campaign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := source.OrganizeCharacter(context.Background(), imported.Character.ID, library.CharacterOrganization{Favorite: true, Note: "Backup this note.", CollectionIDs: []string{collection.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	worldbook := `{"entries":{"0":{"key":["city"],"comment":"City","content":"A city."}}}`
@@ -46,6 +56,13 @@ func TestBackupRestoreMergesLibraryByContentHash(t *testing.T) {
 	sourceCharacters, _ := source.List(context.Background())
 	if !characters[0].ImportedAt.Equal(sourceCharacters[0].ImportedAt) {
 		t.Fatalf("restored import time = %v, want %v", characters[0].ImportedAt, sourceCharacters[0].ImportedAt)
+	}
+	if !characters[0].Favorite || characters[0].Note != "Backup this note." || len(characters[0].CollectionIDs) != 1 {
+		t.Fatalf("organization was not restored: %#v", characters[0])
+	}
+	restoredCollections, err := restored.Collections(context.Background())
+	if err != nil || len(restoredCollections) != 1 || restoredCollections[0].Name != "Campaign" || restoredCollections[0].CharacterCount != 1 {
+		t.Fatalf("collections were not restored: %#v, %v", restoredCollections, err)
 	}
 	result, err = restored.RestoreBackup(context.Background(), bytes.NewReader(archive.Bytes()))
 	if err != nil || result.Imported != 0 || result.Duplicates != 2 {

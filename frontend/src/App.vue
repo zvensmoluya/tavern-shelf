@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { AlertCircle, BookOpenText, LoaderCircle, SearchX, SlidersHorizontal } from "@lucide/vue";
+import CharacterOrganizerBar from "@/components/CharacterOrganizerBar.vue";
 import CharacterDetailDialog from "@/components/CharacterDetailDialog.vue";
 import DropImportOverlay from "@/components/DropImportOverlay.vue";
 import EmptyLibrary from "@/components/EmptyLibrary.vue";
@@ -12,10 +13,11 @@ import ShelfRail from "@/components/ShelfRail.vue";
 import ShelfToolsPanel from "@/components/ShelfToolsPanel.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
 import { api } from "@/lib/api";
-import type { Character, ConnectorPairing, ConnectorStatus, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
+import type { Character, CharacterOrganization, Collection, ConnectorPairing, ConnectorStatus, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
 
 const characters = ref<Character[]>([]);
 const resources = ref<ShelfResource[]>([]);
+const collections = ref<Collection[]>([]);
 const status = ref<ShelfStatus | null>(null);
 const connectorStatus = ref<ConnectorStatus | null>(null);
 const connectorPairing = ref<ConnectorPairing | null>(null);
@@ -31,17 +33,43 @@ const transferTarget = ref<TransferTarget | null>(null);
 const deleting = ref(false);
 const toolBusy = ref(false);
 const importing = ref(false);
+const savingOrganization = ref(false);
+const activeCharacterView = ref("all");
+const characterSort = ref("newest");
+const characterFormat = ref("all");
+const characterFeature = ref("all");
+const characterTag = ref("");
 const notice = ref<{ message: string; error: boolean } | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const filteredCharacters = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
-  if (!needle) return characters.value;
-  return characters.value.filter(character =>
-    `${character.name} ${character.creator || ""} ${(character.tags || []).join(" ")}`.toLocaleLowerCase().includes(needle),
-  );
+  const recentThreshold = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const filtered = characters.value.filter(character => {
+    if (activeCharacterView.value === "favorites" && !character.favorite) return false;
+    if (activeCharacterView.value === "recent" && new Date(character.importedAt).getTime() < recentThreshold) return false;
+    if (activeCharacterView.value === "unfiled" && character.collectionIds.length) return false;
+    if (!["all", "favorites", "recent", "unfiled"].includes(activeCharacterView.value) && !character.collectionIds.includes(activeCharacterView.value)) return false;
+    if (characterFormat.value !== "all" && character.sourceFormat.toLocaleLowerCase() !== characterFormat.value) return false;
+    if (characterFeature.value === "worldbook" && !character.hasWorldbook) return false;
+    if (characterFeature.value === "regex" && !character.hasRegex) return false;
+    if (characterFeature.value === "extensions" && !character.hasExtensions) return false;
+    if (characterFeature.value === "interactive" && !character.hasInteractive) return false;
+    if (characterTag.value && !character.tags.some(tag => tag.toLocaleLowerCase() === characterTag.value.toLocaleLowerCase())) return false;
+    return !needle || `${character.name} ${character.creator || ""} ${(character.tags || []).join(" ")} ${character.note || ""}`.toLocaleLowerCase().includes(needle);
+  });
+  return [...filtered].sort((left, right) => {
+    if (characterSort.value === "oldest") return new Date(left.importedAt).getTime() - new Date(right.importedAt).getTime();
+    if (characterSort.value === "name") return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+    if (characterSort.value === "creator") return (left.creator || "").localeCompare(right.creator || "", undefined, { sensitivity: "base" }) || left.name.localeCompare(right.name);
+    if (characterSort.value === "favorite") return Number(right.favorite) - Number(left.favorite) || new Date(right.importedAt).getTime() - new Date(left.importedAt).getTime();
+    return new Date(right.importedAt).getTime() - new Date(left.importedAt).getTime();
+  });
 });
+
+const availableTags = computed(() => [...new Set(characters.value.flatMap(character => character.tags || []))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })));
+const activeCharacterViewLabel = computed(() => collections.value.find(collection => collection.id === activeCharacterView.value)?.name || ({ all: "全部角色", favorites: "收藏角色", recent: "最近加入", unfiled: "未分类角色" } as Record<string, string>)[activeCharacterView.value] || "角色");
 
 const sectionResources = computed(() => resources.value.filter(resource =>
   activeSection.value === "worldbooks" ? resource.kind === "worldbook" : resource.kind === "preset",
@@ -77,9 +105,11 @@ function showNotice(message: string, error = false, timeout = 4500) {
 async function loadLibrary(quiet = false) {
   if (!quiet) refreshing.value = true;
   try {
-    const [nextCharacters, nextResources] = await Promise.all([api.listCharacters(), api.listResources()]);
+    const [nextCharacters, nextResources, nextCollections] = await Promise.all([api.listCharacters(), api.listResources(), api.listCollections()]);
     characters.value = nextCharacters;
     resources.value = nextResources;
+    collections.value = nextCollections;
+    if (!["all", "favorites", "recent", "unfiled"].includes(activeCharacterView.value) && !nextCollections.some(collection => collection.id === activeCharacterView.value)) activeCharacterView.value = "all";
     if (selectedID.value && !selected.value) selectedID.value = null;
     if (selectedResourceID.value && !selectedResource.value) selectedResourceID.value = null;
   } catch (error) {
@@ -209,6 +239,72 @@ function selectSection(section: LibrarySection) {
   toolsOpen.value = false;
   selectedID.value = null;
   selectedResourceID.value = null;
+}
+
+function replaceCharacter(updated: Character) {
+  const index = characters.value.findIndex(character => character.id === updated.id);
+  if (index >= 0) characters.value[index] = updated;
+}
+
+async function organizeCharacter(character: Character, organization: CharacterOrganization, message = "收藏信息已保存") {
+  savingOrganization.value = true;
+  try {
+    replaceCharacter(await api.organizeCharacter(character.id, organization));
+    collections.value = await api.listCollections();
+    showNotice(message);
+  } catch (error) {
+    showNotice(`无法保存收藏信息：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    savingOrganization.value = false;
+  }
+}
+
+function toggleFavorite(character: Character) {
+  void organizeCharacter(character, { favorite: !character.favorite, note: character.note || "", collectionIds: character.collectionIds }, character.favorite ? "已取消收藏" : "已加入收藏");
+}
+
+function saveSelectedOrganization(organization: CharacterOrganization) {
+  if (selected.value) void organizeCharacter(selected.value, organization);
+}
+
+async function createCollection() {
+  const name = window.prompt("新收藏夹名称")?.trim();
+  if (!name) return;
+  try {
+    const collection = await api.createCollection(name);
+    collections.value = await api.listCollections();
+    activeCharacterView.value = collection.id;
+    showNotice(`已创建收藏夹“${collection.name}”`);
+  } catch (error) {
+    showNotice(`无法创建收藏夹：${error instanceof Error ? error.message : "未知错误"}`, true);
+  }
+}
+
+async function renameActiveCollection() {
+  const collection = collections.value.find(value => value.id === activeCharacterView.value);
+  if (!collection) return;
+  const name = window.prompt("重命名收藏夹", collection.name)?.trim();
+  if (!name || name === collection.name) return;
+  try {
+    await api.renameCollection(collection.id, name);
+    collections.value = await api.listCollections();
+    showNotice(`收藏夹已重命名为“${name}”`);
+  } catch (error) {
+    showNotice(`无法重命名收藏夹：${error instanceof Error ? error.message : "未知错误"}`, true);
+  }
+}
+
+async function removeActiveCollection() {
+  const collection = collections.value.find(value => value.id === activeCharacterView.value);
+  if (!collection || !window.confirm(`删除收藏夹“${collection.name}”？\n\n其中的角色不会被删除。`)) return;
+  try {
+    await api.removeCollection(collection.id);
+    activeCharacterView.value = "all";
+    await loadLibrary(true);
+    showNotice(`已删除收藏夹“${collection.name}”，角色仍保留在 Library`);
+  } catch (error) {
+    showNotice(`无法删除收藏夹：${error instanceof Error ? error.message : "未知错误"}`, true);
+  }
 }
 
 async function addInbox() {
@@ -396,6 +492,20 @@ onBeforeUnmount(() => {
         @refresh="loadLibrary()"
       />
 
+      <CharacterOrganizerBar
+        v-if="activeSection === 'characters'"
+        v-model:active-view="activeCharacterView"
+        v-model:sort="characterSort"
+        v-model:format="characterFormat"
+        v-model:feature="characterFeature"
+        v-model:tag="characterTag"
+        :collections="collections"
+        :tags="availableTags"
+        @create-collection="createCollection"
+        @rename-collection="renameActiveCollection"
+        @remove-collection="removeActiveCollection"
+      />
+
       <section class="px-9 pb-16 pt-7 max-[860px]:px-5" aria-live="polite">
         <div v-if="loading" class="grid min-h-[48vh] place-content-center justify-items-center gap-3 text-[11px] text-shelf-muted">
           <LoaderCircle :size="23" class="animate-spin" aria-hidden="true" />
@@ -415,12 +525,12 @@ onBeforeUnmount(() => {
 
         <div v-else-if="activeSection === 'characters'">
           <header class="mb-4 flex items-center justify-between">
-            <h2 class="text-[12px] font-medium text-shelf-text-soft">{{ query.trim() ? "搜索结果" : "全部角色" }}</h2>
+            <h2 class="text-[12px] font-medium text-shelf-text-soft">{{ query.trim() ? "搜索结果" : activeCharacterViewLabel }}</h2>
             <span class="text-[10px] text-shelf-quiet">{{ filteredCharacters.length }}{{ query.trim() ? ` / ${characters.length}` : "" }}</span>
           </header>
 
           <div v-if="filteredCharacters.length" class="grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-x-5 gap-y-8 max-[860px]:grid-cols-[repeat(auto-fill,minmax(145px,1fr))] max-[860px]:gap-x-3.5 max-[860px]:gap-y-6">
-            <LibraryCard v-for="character in filteredCharacters" :key="character.id" :character="character" @open="selectedID = $event.id" />
+            <LibraryCard v-for="character in filteredCharacters" :key="character.id" :character="character" @open="selectedID = $event.id" @favorite="toggleFavorite" />
           </div>
 
           <div v-else class="grid min-h-[42vh] place-content-center justify-items-center gap-3 text-center text-shelf-muted">
@@ -469,10 +579,13 @@ onBeforeUnmount(() => {
   <CharacterDetailDialog
     :open="Boolean(selected)"
     :character="selected"
+    :collections="collections"
     :deleting="deleting"
+    :saving-organization="savingOrganization"
     @update:open="open => { if (!open) selectedID = null; }"
     @remove="removeCharacter"
     @transfer="shareCharacter"
+    @organize="saveSelectedOrganization"
   />
 
   <DropImportOverlay :importing="importing" @import="importDroppedFiles" />

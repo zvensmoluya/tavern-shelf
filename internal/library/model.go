@@ -27,8 +27,24 @@ type Character struct {
 	AvatarURL      string           `json:"avatarUrl,omitempty"`
 	SourceURL      string           `json:"sourceUrl"`
 	Manifest       manifest.Content `json:"manifest"`
+	Favorite       bool             `json:"favorite"`
+	Note           string           `json:"note,omitempty"`
+	CollectionIDs  []string         `json:"collectionIds"`
 }
 
 type CreateCharacter struct {
 	Character
+}
+
+type CharacterOrganization struct {
+	Favorite      bool     `json:"favorite"`
+	Note          string   `json:"note"`
+	CollectionIDs []string `json:"collectionIds"`
+}
+
+type Collection struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	CharacterCount int       `json:"characterCount"`
+	CreatedAt      time.Time `json:"createdAt"`
 }

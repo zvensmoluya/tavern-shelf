@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openai/tavern-shelf/internal/app"
+	"github.com/openai/tavern-shelf/internal/library"
 	"github.com/openai/tavern-shelf/internal/store"
 	"github.com/openai/tavern-shelf/internal/transfer"
 	"github.com/openai/tavern-shelf/internal/webui"
@@ -267,6 +268,35 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 		}
 		writeJSON(w, http.StatusOK, character)
 	})
+	mux.HandleFunc("PUT /api/characters/{id}/organization", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Favorite      bool     `json:"favorite"`
+			Note          string   `json:"note"`
+			CollectionIDs []string `json:"collectionIds"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid character organization"))
+			return
+		}
+		if err := application.OrganizeCharacter(r.Context(), r.PathValue("id"), library.CharacterOrganization{
+			Favorite: request.Favorite, Note: request.Note, CollectionIDs: request.CollectionIDs,
+		}); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		character, err := application.Get(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, character)
+	})
 	mux.HandleFunc("DELETE /api/characters/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := application.Delete(r.Context(), r.PathValue("id")); err != nil {
 			writeStoreError(w, err)
@@ -312,6 +342,54 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 			return
 		}
 		writeJSON(w, http.StatusOK, resources)
+	})
+	mux.HandleFunc("GET /api/collections", func(w http.ResponseWriter, r *http.Request) {
+		collections, err := application.Collections(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, collections)
+	})
+	mux.HandleFunc("POST /api/collections", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("valid collection name is required"))
+			return
+		}
+		collection, err := application.CreateCollection(r.Context(), request.Name)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, collection)
+	})
+	mux.HandleFunc("PUT /api/collections/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("valid collection name is required"))
+			return
+		}
+		if err := application.RenameCollection(r.Context(), r.PathValue("id"), request.Name); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("DELETE /api/collections/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := application.DeleteCollection(r.Context(), r.PathValue("id")); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/resources/{id}", func(w http.ResponseWriter, r *http.Request) {
 		resource, err := application.GetResource(r.Context(), r.PathValue("id"))

@@ -57,6 +57,42 @@ func TestDragImportAPI(t *testing.T) {
 	}
 }
 
+func TestCharacterOrganizationAndCollectionAPI(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	result, err := shelf.ImportUpload(context.Background(), "organized.json", bytes.NewBufferString(`{"spec":"chara_card_v2","data":{"name":"Organized"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]string{"name": "Campaign"})
+	request := httptest.NewRequest(http.MethodPost, "/api/collections", bytes.NewReader(raw))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var collection library.Collection
+	if response.Code != http.StatusCreated || json.Unmarshal(response.Body.Bytes(), &collection) != nil || collection.ID == "" {
+		t.Fatalf("create collection code=%d body=%s", response.Code, response.Body.String())
+	}
+	requestJSON(t, handler, http.MethodPut, "/api/characters/"+result.Character.ID+"/organization", map[string]any{
+		"favorite": true, "note": "Private note", "collectionIds": []string{collection.ID},
+	}, http.StatusOK)
+	request = httptest.NewRequest(http.MethodGet, "/api/characters", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var characters []library.Character
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &characters) != nil || len(characters) != 1 || !characters[0].Favorite || characters[0].Note != "Private note" || len(characters[0].CollectionIDs) != 1 {
+		t.Fatalf("organized character response code=%d body=%s", response.Code, response.Body.String())
+	}
+	requestJSON(t, handler, http.MethodPut, "/api/collections/"+collection.ID, map[string]string{"name": "Main Campaign"}, http.StatusNoContent)
+	requestJSON(t, handler, http.MethodDelete, "/api/collections/"+collection.ID, nil, http.StatusNoContent)
+}
+
 func TestOneShotScanAPILeavesSourceInPlace(t *testing.T) {
 	external := t.TempDir()
 	source := filepath.Join(external, "one-shot.json")
@@ -351,6 +387,20 @@ func TestConnectorPairAuthorizeCORSAndImport(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated || response.Header().Get("Access-Control-Allow-Origin") != "http://localhost:8000" {
 		t.Fatalf("import response code=%d body=%s", response.Code, response.Body.String())
+	}
+	characters, err := shelf.List(context.Background())
+	if err != nil || len(characters) != 1 {
+		t.Fatalf("list connector import: %#v, %v", characters, err)
+	}
+	if err := shelf.OrganizeCharacter(context.Background(), characters[0].ID, library.CharacterOrganization{Favorite: true, Note: "connector-private-note"}); err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/connector/v1/characters", nil)
+	request.Header.Set("Authorization", "Bearer "+paired.Token)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || bytes.Contains(response.Body.Bytes(), []byte("connector-private-note")) || bytes.Contains(response.Body.Bytes(), []byte("favorite")) {
+		t.Fatalf("connector exposed Shelf-only organization metadata: code=%d body=%s", response.Code, response.Body.String())
 	}
 
 	body.Reset()

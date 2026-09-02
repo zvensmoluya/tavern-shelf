@@ -25,3 +25,5 @@ The response contains a random Bearer token. Only its SHA-256 hash is stored by 
 All routes except status and pairing require `Authorization: Bearer <token>`.
 
 Browser clients are accepted only from HTTP or HTTPS loopback origins. Connector responses use `Cache-Control: no-store`; clients should treat a `401` response as a revoked pairing. Imports return `{id, kind, name, duplicate}` and use Shelf's normal content-hash deduplication and safe staging process.
+
+Shelf-only organization metadata such as favorites, private notes, and collection membership is deliberately excluded from Connector responses.

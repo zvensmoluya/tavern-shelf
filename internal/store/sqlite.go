@@ -83,6 +83,24 @@ CREATE TABLE IF NOT EXISTS resources (
     details_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_resources_kind_imported_at ON resources(kind, imported_at DESC);
+CREATE TABLE IF NOT EXISTS character_organization (
+    character_id TEXT PRIMARY KEY,
+    favorite INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collection_characters (
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    character_id TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (collection_id, character_id)
+);
+CREATE INDEX IF NOT EXISTS idx_collection_characters_character ON collection_characters(character_id);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate library database: %w", err)
