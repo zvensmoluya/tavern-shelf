@@ -101,6 +101,20 @@ CREATE TABLE IF NOT EXISTS collection_characters (
     PRIMARY KEY (collection_id, character_id)
 );
 CREATE INDEX IF NOT EXISTS idx_collection_characters_character ON collection_characters(character_id);
+CREATE TABLE IF NOT EXISTS character_adaptations (
+    character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    source_hash TEXT NOT NULL,
+    program_view_rel_path TEXT NOT NULL,
+    program_view_hash TEXT NOT NULL,
+    artifact_rel_path TEXT NOT NULL DEFAULT '',
+    artifact_hash TEXT NOT NULL DEFAULT '',
+    artifact_size INTEGER NOT NULL DEFAULT 0,
+    compiler_id TEXT NOT NULL DEFAULT '',
+    compiler_version TEXT NOT NULL DEFAULT '',
+    compiler_model TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate library database: %w", err)
@@ -109,6 +123,62 @@ CREATE INDEX IF NOT EXISTS idx_collection_characters_character ON collection_cha
 		return fmt.Errorf("add content manifest column: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) UpsertAdaptation(ctx context.Context, adaptation library.Adaptation) error {
+	const query = `INSERT INTO character_adaptations (
+character_id, source_hash, program_view_rel_path, program_view_hash,
+artifact_rel_path, artifact_hash, artifact_size, compiler_id, compiler_version,
+compiler_model, status, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(character_id) DO UPDATE SET
+source_hash = excluded.source_hash,
+program_view_rel_path = excluded.program_view_rel_path,
+program_view_hash = excluded.program_view_hash,
+artifact_rel_path = excluded.artifact_rel_path,
+artifact_hash = excluded.artifact_hash,
+artifact_size = excluded.artifact_size,
+compiler_id = excluded.compiler_id,
+compiler_version = excluded.compiler_version,
+compiler_model = excluded.compiler_model,
+status = excluded.status,
+updated_at = excluded.updated_at`
+	_, err := s.db.ExecContext(ctx, query,
+		adaptation.CharacterID, adaptation.SourceHash, adaptation.ProgramViewPath, adaptation.ProgramViewHash,
+		adaptation.ArtifactPath, adaptation.ArtifactHash, adaptation.ArtifactSize,
+		adaptation.CompilerID, adaptation.CompilerVersion, adaptation.CompilerModel,
+		adaptation.Status, adaptation.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return fmt.Errorf("upsert character adaptation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetAdaptation(ctx context.Context, characterID string) (library.Adaptation, error) {
+	const query = `SELECT character_id, source_hash, program_view_rel_path, program_view_hash,
+artifact_rel_path, artifact_hash, artifact_size, compiler_id, compiler_version,
+compiler_model, status, updated_at
+FROM character_adaptations WHERE character_id = ?`
+	var result library.Adaptation
+	var updatedAt string
+	err := s.db.QueryRowContext(ctx, query, characterID).Scan(
+		&result.CharacterID, &result.SourceHash, &result.ProgramViewPath, &result.ProgramViewHash,
+		&result.ArtifactPath, &result.ArtifactHash, &result.ArtifactSize,
+		&result.CompilerID, &result.CompilerVersion, &result.CompilerModel,
+		&result.Status, &updatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return library.Adaptation{}, ErrNotFound
+	}
+	if err != nil {
+		return library.Adaptation{}, fmt.Errorf("get character adaptation: %w", err)
+	}
+	result.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return library.Adaptation{}, fmt.Errorf("decode character adaptation time: %w", err)
+	}
+	return result, nil
 }
 
 func (s *Store) InboxDirectories(ctx context.Context) ([]string, error) {

@@ -48,3 +48,20 @@ type Collection struct {
 	CharacterCount int       `json:"characterCount"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
+
+// Adaptation records rebuildable, source-bound artifacts. The original card
+// remains authoritative and is never rewritten by the adaptation pipeline.
+type Adaptation struct {
+	CharacterID     string    `json:"characterId"`
+	SourceHash      string    `json:"sourceHash"`
+	ProgramViewPath string    `json:"-"`
+	ProgramViewHash string    `json:"programViewHash"`
+	ArtifactPath    string    `json:"-"`
+	ArtifactHash    string    `json:"artifactHash,omitempty"`
+	ArtifactSize    int64     `json:"artifactSize,omitempty"`
+	CompilerID      string    `json:"compilerId,omitempty"`
+	CompilerVersion string    `json:"compilerVersion,omitempty"`
+	CompilerModel   string    `json:"compilerModel,omitempty"`
+	Status          string    `json:"status"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}

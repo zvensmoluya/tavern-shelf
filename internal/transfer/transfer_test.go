@@ -73,6 +73,51 @@ func TestTransferManifestAndSource(t *testing.T) {
 	}
 }
 
+func TestCharacterTransferIncludesOptionalAdaptation(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	sourcePath := directory + "/card.json"
+	artifactPath := directory + "/adaptation.json"
+	sourceRaw := []byte(`{"name":"Lantern"}`)
+	artifactRaw := []byte(`{"schemaVersion":1}`)
+	if err := os.WriteFile(sourcePath, sourceRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath, artifactRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(func(context.Context, string, string) (Source, error) {
+		return Source{
+			Kind: "character", ID: "card-1", Name: "Lantern", Filename: "lantern.json",
+			Path: sourcePath, SHA256: sourceHash(sourceRaw),
+			Adaptation: &Attachment{SchemaVersion: 1, Filename: "adaptation-v1.json", Path: artifactPath, SHA256: sourceHash(artifactRaw)},
+		}, nil
+	})
+	t.Cleanup(func() { _ = server.Close() })
+	session, err := server.Create(context.Background(), "character", "card-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedURL, _ := url.Parse(session.URL)
+	request := httptest.NewRequest(http.MethodGet, "/v1/transfers/"+session.ID, nil)
+	request.Host = parsedURL.Host
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	var manifest Manifest
+	if err := json.Unmarshal(response.Body.Bytes(), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Adaptation == nil || manifest.Adaptation.URL != session.URL+"/adaptation" || manifest.Adaptation.SHA256 != sourceHash(artifactRaw) {
+		t.Fatalf("unexpected adaptation manifest: %#v", manifest.Adaptation)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/transfers/"+session.ID+"/adaptation", nil)
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.String() != string(artifactRaw) {
+		t.Fatalf("adaptation code = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func TestExpiredAndRevokedTransfersAreUnavailable(t *testing.T) {
 	path := t.TempDir() + "/preset.json"
 	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
