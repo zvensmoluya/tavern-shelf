@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/card"
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/paths"
-	resourceparser "github.com/openai/tavern-shelf/internal/resource"
-	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/paths"
+	resourceparser "github.com/zvensmoluya/tavern-shelf/internal/resource"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
 )
 
 type Result struct {

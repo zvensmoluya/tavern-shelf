@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openai/tavern-shelf/internal/manifest"
+	"github.com/zvensmoluya/tavern-shelf/internal/manifest"
 )
 
 var (

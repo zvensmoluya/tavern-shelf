@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/manifest"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/manifest"
 )
 
 var ErrUnsupported = errors.New("unsupported Shelf resource format")

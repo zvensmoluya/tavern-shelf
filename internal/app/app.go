@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/card"
-	"github.com/openai/tavern-shelf/internal/connector"
-	"github.com/openai/tavern-shelf/internal/importer"
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/paths"
-	"github.com/openai/tavern-shelf/internal/scanner"
-	"github.com/openai/tavern-shelf/internal/store"
-	"github.com/openai/tavern-shelf/internal/transfer"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
+	"github.com/zvensmoluya/tavern-shelf/internal/connector"
+	"github.com/zvensmoluya/tavern-shelf/internal/importer"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/paths"
+	"github.com/zvensmoluya/tavern-shelf/internal/scanner"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/transfer"
 )
 
 type App struct {

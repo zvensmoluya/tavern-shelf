@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/card"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
 )
 
 type OneShotScanIssue struct {

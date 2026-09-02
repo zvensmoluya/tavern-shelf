@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/manifest"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/manifest"
 	_ "modernc.org/sqlite"
 )
 

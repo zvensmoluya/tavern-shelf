@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openai/tavern-shelf/internal/app"
-	"github.com/openai/tavern-shelf/internal/connector"
-	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/app"
+	"github.com/zvensmoluya/tavern-shelf/internal/connector"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
 )
 
 func registerConnectorManagement(mux *http.ServeMux, application *app.App) {

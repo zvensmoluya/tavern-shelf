@@ -11,8 +11,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
 )
 
 const (

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/importer"
-	"github.com/openai/tavern-shelf/internal/paths"
-	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/importer"
+	"github.com/zvensmoluya/tavern-shelf/internal/paths"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
 )
 
 func TestScannerWaitsForAStableFile(t *testing.T) {

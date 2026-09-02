@@ -3,7 +3,7 @@ package library
 import (
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/manifest"
+	"github.com/zvensmoluya/tavern-shelf/internal/manifest"
 )
 
 const (

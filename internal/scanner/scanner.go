@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/card"
-	"github.com/openai/tavern-shelf/internal/importer"
-	pathutil "github.com/openai/tavern-shelf/internal/paths"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
+	"github.com/zvensmoluya/tavern-shelf/internal/importer"
+	pathutil "github.com/zvensmoluya/tavern-shelf/internal/paths"
 )
 
 type Config struct {

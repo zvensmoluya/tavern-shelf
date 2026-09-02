@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/app"
-	"github.com/openai/tavern-shelf/internal/httpapi"
+	"github.com/zvensmoluya/tavern-shelf/internal/app"
+	"github.com/zvensmoluya/tavern-shelf/internal/httpapi"
 )
+
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -27,7 +29,12 @@ func main() {
 func run() error {
 	dataDir := flag.String("data-dir", "", "managed data directory (default: user config directory)")
 	listen := flag.String("listen", "127.0.0.1:8787", "HTTP listen address")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("Tavern Shelf", version)
+		return nil
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	shelf, err := app.Open(app.Options{DataDir: *dataDir, Logger: logger})

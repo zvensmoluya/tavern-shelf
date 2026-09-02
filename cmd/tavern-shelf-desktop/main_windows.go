@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/app"
-	"github.com/openai/tavern-shelf/internal/desktop"
-	"github.com/openai/tavern-shelf/internal/httpapi"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/zvensmoluya/tavern-shelf/internal/app"
+	"github.com/zvensmoluya/tavern-shelf/internal/desktop"
+	"github.com/zvensmoluya/tavern-shelf/internal/httpapi"
 )
 
 var instanceKey = [32]byte{
@@ -82,7 +82,7 @@ func main() {
 	icon := makeIcon()
 	var window *application.WebviewWindow
 	wailsApp := application.New(application.Options{
-		Name: "Tavern Shelf", Description: "Your private character card library", Icon: icon,
+		Name: "Tavern Shelf", Description: "Your private character card library · " + version, Icon: icon,
 		Assets:  application.AssetOptions{Handler: handler, DisableLogging: true},
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true, WebviewUserDataPath: filepath.Join(shelf.Paths.AppData, "webview")},
 		SingleInstance: &application.SingleInstanceOptions{

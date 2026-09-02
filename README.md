@@ -1,8 +1,27 @@
-# Tavern Shelf
+<p align="center">
+  <img src="frontend/public/brand-mark.svg" width="88" height="88" alt="Tavern Shelf">
+</p>
 
-SillyTavern 可通过独立的 Tavern Shelf Connector 扩展在本机双向传输角色卡。桌面版默认监听 `127.0.0.1:8787`，使用短码配对和可撤销令牌；第三方客户端对接说明见 [Connector Protocol v1](docs/connector-protocol-v1.md)。
+<h1 align="center">Tavern Shelf</h1>
 
-Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 资源放进 Shelf 自己的默认 Inbox 后，Shelf 会等待文件写入稳定、解析内容、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。也可以长期监视外部目录、只扫描某个目录一次，或者直接把文件拖到 Shelf 窗口；这三种方式都只复制收藏，源文件始终留在原处。
+<p align="center">把散落的 SillyTavern 角色卡收进一座安全、安静的私人媒体库。</p>
+
+<p align="center">
+  <a href="https://github.com/zvensmoluya/tavern-shelf/actions/workflows/ci.yml"><img src="https://github.com/zvensmoluya/tavern-shelf/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/zvensmoluya/tavern-shelf/releases/latest"><img src="https://img.shields.io/github/v/release/zvensmoluya/tavern-shelf?display_name=tag&sort=semver" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/zvensmoluya/tavern-shelf" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/zvensmoluya/tavern-shelf/releases/latest">下载 Windows 版</a>
+  · <a href="docs/connector-protocol-v1.md">Connector 协议</a>
+  · <a href="docs/transfer-protocol-v1.md">二维码传输协议</a>
+  · <a href="LICENSE">MIT License</a>
+</p>
+
+Tavern Shelf 是本地优先的角色卡资源库。把 PNG / JSON 角色卡、世界书或预设放进 Inbox，Shelf 会等待写入稳定、解析内容、按 SHA-256 去重，并把原始 Source 安全收录到 Managed Library。你也可以监视外部目录、只扫描一次，或直接拖入窗口；复制来源不会被 Shelf 修改。
+
+它像私人唱片库，而不是角色卡编辑器或公共社区：封面浏览、收藏夹、私人备注、组合筛选、完整备份与 Trash 恢复都围绕自己的内容展开。SillyTavern 可以通过独立的 [Tavern Shelf Connector 扩展](https://github.com/zvensmoluya/tavern-shelf-st-connector) 在本机双向传输单张角色卡。
 
 当前仓库已经包含本地资源收录的完整纵向路径：
 
@@ -15,7 +34,17 @@ Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单
 
 角色卡、独立世界书和预设都可以通过详情页的二维码，在同一局域网内创建一个十分钟有效的单资源传输会话。扫码端对接说明见 [Transfer Protocol v1](docs/transfer-protocol-v1.md)。
 
-## 本地运行
+## 安装 Windows 版
+
+1. 打开 [Releases](https://github.com/zvensmoluya/tavern-shelf/releases/latest)，下载 `TavernShelf-Setup-<version>.exe`。
+2. 运行安装器。它安装到当前用户目录，不需要管理员权限，也不会要求终端常驻。
+3. 启动 Tavern Shelf，把角色卡拖进窗口，或从工具面板打开 Inbox。
+
+目标环境为 64 位 Windows 10 / 11，并需要 Microsoft Edge WebView2 Runtime；现代 Windows 通常已经包含它。当前 Alpha 安装包尚未进行商业代码签名，Windows SmartScreen 可能显示“未知发布者”，请只从本仓库 Release 下载并对照同一 Release 中的 `SHA256SUMS.txt`。
+
+卸载程序不会擅自删除用户的 Managed Library。迁移、重装或清理数据前，建议先在工具面板下载完整备份。
+
+## 从源码运行
 
 需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22.12 或更新版本与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。
 
@@ -54,7 +83,7 @@ npm run dev
 .\scripts\build-windows.ps1
 ```
 
-产物位于 `build/bin/TavernShelf.exe`。传入 `-Installer` 时，如果本机安装了 Inno Setup 6，还会生成当前用户安装包和开始菜单快捷方式。
+产物位于 `build/bin/TavernShelf.exe`。传入 `-Installer` 时，如果本机安装了 Inno Setup 6，还会生成当前用户安装包和带品牌图标的快捷方式。维护者发布流程见 [docs/releasing.md](docs/releasing.md)。
 
 ## 数据目录
 
@@ -116,6 +145,10 @@ go build ./...
 ```
 
 核心测试覆盖 JSON/PNG 解析、稳定文件检测、安全导入、重复内容和失败时保留原文件。
+
+## 参与开发与安全报告
+
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。涉及路径越界、意外删除、源文件损坏、认证绕过或非预期网络暴露的问题，请按 [SECURITY.md](SECURITY.md) 私下报告，不要在公开 Issue 中附带真实角色库、数据库或令牌。
 
 ## License
 

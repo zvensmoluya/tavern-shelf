@@ -7,6 +7,9 @@
 # Build output
 /bin/
 /build/bin/
+/build/installer/
+/build/release/
+/build/tools/
 *.exe
 /frontend/node_modules/
 /frontend/.vite/

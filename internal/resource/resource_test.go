@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openai/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
 )
 
 func TestParseStandaloneSillyTavernWorldbook(t *testing.T) {

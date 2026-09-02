@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/app"
-	"github.com/openai/tavern-shelf/internal/library"
-	"github.com/openai/tavern-shelf/internal/store"
-	"github.com/openai/tavern-shelf/internal/transfer"
-	"github.com/openai/tavern-shelf/internal/webui"
+	"github.com/zvensmoluya/tavern-shelf/internal/app"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/transfer"
+	"github.com/zvensmoluya/tavern-shelf/internal/webui"
 )
 
 type DesktopActions interface {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/card"
-	resourceparser "github.com/openai/tavern-shelf/internal/resource"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
+	resourceparser "github.com/zvensmoluya/tavern-shelf/internal/resource"
 )
 
 const trashMetadataFilename = "trash.json"

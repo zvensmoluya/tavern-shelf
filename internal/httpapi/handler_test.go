@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/tavern-shelf/internal/app"
-	"github.com/openai/tavern-shelf/internal/importer"
-	"github.com/openai/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/app"
+	"github.com/zvensmoluya/tavern-shelf/internal/importer"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
 )
 
 func TestDragImportAPI(t *testing.T) {

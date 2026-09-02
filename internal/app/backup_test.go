@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/openai/tavern-shelf/internal/library"
+	"github.com/zvensmoluya/tavern-shelf/internal/library"
 )
 
 func TestBackupRestoreMergesLibraryByContentHash(t *testing.T) {

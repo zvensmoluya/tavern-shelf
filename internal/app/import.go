@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openai/tavern-shelf/internal/card"
-	"github.com/openai/tavern-shelf/internal/importer"
+	"github.com/zvensmoluya/tavern-shelf/internal/card"
+	"github.com/zvensmoluya/tavern-shelf/internal/importer"
 )
 
 const MaxUploadSize int64 = 64 << 20

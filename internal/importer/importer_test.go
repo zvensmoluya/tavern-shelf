@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/openai/tavern-shelf/internal/paths"
-	"github.com/openai/tavern-shelf/internal/store"
+	"github.com/zvensmoluya/tavern-shelf/internal/paths"
+	"github.com/zvensmoluya/tavern-shelf/internal/store"
 )
 
 const validCard = `{"spec":"chara_card_v2","spec_version":"2.0","data":{"name":"Mara","creator":"Inkkeeper","tags":["fantasy"]}}`

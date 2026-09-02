@@ -1,4 +1,4 @@
-module github.com/openai/tavern-shelf
+module github.com/zvensmoluya/tavern-shelf
 
 go 1.26.2
 
