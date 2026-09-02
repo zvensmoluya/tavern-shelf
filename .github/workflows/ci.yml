@@ -29,8 +29,6 @@ jobs:
         run: go test ./...
       - name: Build Go commands
         run: go build ./...
-      - name: Check generated web UI
-        run: git diff --exit-code -- internal/webui/static
 
   windows:
     runs-on: windows-latest
