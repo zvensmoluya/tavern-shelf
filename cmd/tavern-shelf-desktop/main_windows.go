@@ -33,6 +33,7 @@ func main() {
 	dataDir := flag.String("data-dir", "", "managed data directory")
 	background := flag.Bool("background", false, "start hidden in the system tray")
 	connectorListen := flag.String("connector-listen", "127.0.0.1:8787", "local connector listen address")
+	connectorOrigin := flag.String("connector-origin", "", "allow one HTTPS SillyTavern page origin")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -40,13 +41,23 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	actions := &desktop.Actions{}
+	autoStartArguments := []string{"--background"}
+	if *dataDir != "" {
+		autoStartArguments = append(autoStartArguments, "--data-dir", *dataDir)
+	}
+	if *connectorListen != "127.0.0.1:8787" {
+		autoStartArguments = append(autoStartArguments, "--connector-listen", *connectorListen)
+	}
+	if *connectorOrigin != "" {
+		autoStartArguments = append(autoStartArguments, "--connector-origin", *connectorOrigin)
+	}
+	actions := &desktop.Actions{AutoStartArguments: autoStartArguments}
 	handler, err := httpapi.Handler(shelf, actions)
 	if err != nil {
 		_ = shelf.Close()
 		panic(err)
 	}
-	connectorServer := &http.Server{Handler: httpapi.ConnectorHandler(shelf), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second}
+	connectorServer := &http.Server{Handler: httpapi.ConnectorHandler(shelf, *connectorOrigin), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second}
 	connectorListener, listenErr := net.Listen("tcp", *connectorListen)
 	if listenErr != nil {
 		shelf.Connector.SetListener(*connectorListen, listenErr)

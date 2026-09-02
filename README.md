@@ -66,6 +66,14 @@ Windows 桌面开发模式：
 .\scripts\run-windows-dev.ps1
 ```
 
+如果 SillyTavern 页面由受信任的远程 HTTPS 站点提供，而 Shelf 仍运行在当前电脑，可只允许该页面的精确 Origin 访问本机 Connector：
+
+```powershell
+.\build\bin\TavernShelf.exe -connector-origin "https://chat.example.com"
+```
+
+Shelf 仍应监听默认的 `127.0.0.1:8787`，不需要也不应为此暴露到局域网或公网。Chrome / Edge 首次连接时可能请求访问本机服务的权限。
+
 该脚本始终构建并运行 `build/dev/TavernShelf-dev.exe`，让 Windows 防火墙能够稳定识别同一个调试程序。使用 `go run ./cmd/tavern-shelf-desktop` 会在临时目录生成不同的 EXE，测试局域网二维码传输时可能反复出现防火墙确认。首次分享时只允许“专用网络”；调试程序仍在系统托盘运行时，应先从托盘退出再重新构建。
 
 前端源码位于 `frontend/`，使用 Vue 3、Vite、TypeScript、Tailwind CSS、Reka UI primitives 和 Lucide。开发前端时可分别启动 Go headless 服务和 Vite：

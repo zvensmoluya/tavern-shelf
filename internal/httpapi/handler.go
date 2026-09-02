@@ -28,13 +28,17 @@ type DesktopActions interface {
 }
 
 func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handler, error) {
+	return HandlerWithConnectorOrigins(application, nil, desktopActions...)
+}
+
+func HandlerWithConnectorOrigins(application *app.App, connectorOrigins []string, desktopActions ...DesktopActions) (http.Handler, error) {
 	assets, err := fs.Sub(webui.Assets, "static")
 	if err != nil {
 		return nil, fmt.Errorf("open embedded UI: %w", err)
 	}
 	mux := http.NewServeMux()
 	registerConnectorManagement(mux, application)
-	connectorHandler := ConnectorHandler(application)
+	connectorHandler := ConnectorHandler(application, connectorOrigins...)
 	mux.Handle("GET /connector/", connectorHandler)
 	mux.Handle("POST /connector/", connectorHandler)
 	mux.Handle("OPTIONS /connector/", connectorHandler)

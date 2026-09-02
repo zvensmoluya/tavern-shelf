@@ -29,6 +29,7 @@ func main() {
 func run() error {
 	dataDir := flag.String("data-dir", "", "managed data directory (default: user config directory)")
 	listen := flag.String("listen", "127.0.0.1:8787", "HTTP listen address")
+	connectorOrigin := flag.String("connector-origin", "", "allow one HTTPS SillyTavern page origin")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -42,7 +43,7 @@ func run() error {
 		return err
 	}
 	defer shelf.Close()
-	handler, err := httpapi.Handler(shelf)
+	handler, err := httpapi.HandlerWithConnectorOrigins(shelf, []string{*connectorOrigin})
 	if err != nil {
 		return err
 	}

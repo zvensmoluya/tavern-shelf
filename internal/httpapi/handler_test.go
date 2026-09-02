@@ -354,7 +354,7 @@ func TestConnectorPairAuthorizeCORSAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := ConnectorHandler(shelf)
+	handler := ConnectorHandler(shelf, "https://chat.zven.cc/")
 	raw, _ := json.Marshal(map[string]string{"code": pairing.Code, "clientName": "ST Test", "clientVersion": "1.18.0"})
 	request := httptest.NewRequest(http.MethodPost, "/connector/v1/pair", bytes.NewReader(raw))
 	request.Header.Set("Origin", "http://127.0.0.1:8000")
@@ -403,6 +403,26 @@ func TestConnectorPairAuthorizeCORSAndImport(t *testing.T) {
 		t.Fatalf("connector exposed Shelf-only organization metadata: code=%d body=%s", response.Code, response.Body.String())
 	}
 
+	request = httptest.NewRequest(http.MethodOptions, "/connector/v1/characters", nil)
+	request.Header.Set("Origin", "https://chat.zven.cc")
+	request.Header.Set("Access-Control-Request-Method", "GET")
+	request.Header.Set("Access-Control-Request-Private-Network", "true")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || response.Header().Get("Access-Control-Allow-Origin") != "https://chat.zven.cc" ||
+		response.Header().Get("Access-Control-Allow-Private-Network") != "true" {
+		t.Fatalf("remote origin preflight code=%d headers=%v", response.Code, response.Header())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/connector/v1/characters", nil)
+	request.Header.Set("Authorization", "Bearer "+paired.Token)
+	request.Header.Set("Origin", "https://chat.zven.cc")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Access-Control-Allow-Origin") != "https://chat.zven.cc" {
+		t.Fatalf("allowed remote origin code=%d body=%s", response.Code, response.Body.String())
+	}
+
 	body.Reset()
 	writer = multipart.NewWriter(&body)
 	part, _ = writer.CreateFormFile("file", "world.json")
@@ -420,7 +440,7 @@ func TestConnectorPairAuthorizeCORSAndImport(t *testing.T) {
 
 	request = httptest.NewRequest(http.MethodGet, "/connector/v1/characters", nil)
 	request.Header.Set("Authorization", "Bearer "+paired.Token)
-	request.Header.Set("Origin", "https://evil.example")
+	request.Header.Set("Origin", "https://chat.zven.cc.evil.example")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {

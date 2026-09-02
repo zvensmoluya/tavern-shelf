@@ -39,8 +39,10 @@ func registerConnectorManagement(mux *http.ServeMux, application *app.App) {
 	})
 }
 
-// ConnectorHandler exposes the deliberately small API used by local client adapters.
-func ConnectorHandler(application *app.App) http.Handler {
+// ConnectorHandler exposes the deliberately small API used by browser client adapters.
+// Loopback page origins are always allowed. Additional origins must be explicitly
+// configured and use HTTPS.
+func ConnectorHandler(application *app.App, allowedOrigins ...string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /connector/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		status := application.Connector.Status()
@@ -131,7 +133,7 @@ func ConnectorHandler(application *app.App) http.Handler {
 			"id": result.Character.ID, "kind": "character", "name": result.Character.Name, "duplicate": result.Duplicate,
 		})
 	})))
-	return connectorCORS(mux)
+	return connectorCORS(mux, allowedOrigins)
 }
 
 func requireConnectorAuth(application *app.App, next http.Handler) http.Handler {
@@ -145,13 +147,13 @@ func requireConnectorAuth(application *app.App, next http.Handler) http.Handler 
 	})
 }
 
-func connectorCORS(next http.Handler) http.Handler {
+func connectorCORS(next http.Handler, allowedOrigins []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		origin := r.Header.Get("Origin")
 		if origin != "" {
-			if !isLoopbackOrigin(origin) {
+			if !isLoopbackOrigin(origin) && !isConfiguredConnectorOrigin(origin, allowedOrigins) {
 				writeError(w, http.StatusForbidden, errors.New("connector origin is not allowed"))
 				return
 			}
@@ -159,6 +161,9 @@ func connectorCORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			if strings.EqualFold(r.Header.Get("Access-Control-Request-Private-Network"), "true") {
+				w.Header().Set("Access-Control-Allow-Private-Network", "true")
+			}
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -166,6 +171,28 @@ func connectorCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isConfiguredConnectorOrigin(value string, allowedOrigins []string) bool {
+	origin, ok := canonicalHTTPSOrigin(value)
+	if !ok {
+		return false
+	}
+	for _, allowed := range allowedOrigins {
+		if candidate, valid := canonicalHTTPSOrigin(allowed); valid && candidate == origin {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalHTTPSOrigin(value string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" || parsed.User != nil ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	return "https://" + strings.ToLower(parsed.Host), true
 }
 
 func isLoopbackOrigin(value string) bool {

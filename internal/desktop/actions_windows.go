@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -18,7 +19,8 @@ const (
 )
 
 type Actions struct {
-	ChooseInboxFunc func() (string, error)
+	ChooseInboxFunc    func() (string, error)
+	AutoStartArguments []string
 }
 
 func (a Actions) OpenInbox(path string) error {
@@ -74,7 +76,7 @@ func (a Actions) SetAutoStart(enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("locate Tavern Shelf executable: %w", err)
 	}
-	command := fmt.Sprintf("\"%s\" --background", executable)
+	command := windows.ComposeCommandLine(append([]string{executable}, a.AutoStartArguments...))
 	if err := key.SetStringValue(runValue, command); err != nil {
 		return fmt.Errorf("enable Tavern Shelf auto-start: %w", err)
 	}
