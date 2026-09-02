@@ -12,11 +12,12 @@ import ShelfRail from "@/components/ShelfRail.vue";
 import ShelfToolsPanel from "@/components/ShelfToolsPanel.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
 import { api } from "@/lib/api";
-import type { Character, LibrarySection, ShelfResource, ShelfStatus, TransferTarget } from "@/types";
+import type { Character, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
 
 const characters = ref<Character[]>([]);
 const resources = ref<ShelfResource[]>([]);
 const status = ref<ShelfStatus | null>(null);
+const trashItems = ref<TrashItem[]>([]);
 const activeSection = ref<LibrarySection>("characters");
 const query = ref("");
 const loading = ref(true);
@@ -93,6 +94,58 @@ async function loadStatus() {
   } catch {
     // Polling will retry without interrupting Library browsing.
   }
+}
+
+async function loadTrash() {
+	try {
+		trashItems.value = await api.listTrash();
+	} catch {
+		// The next tools refresh will retry without interrupting Library browsing.
+	}
+}
+
+function toggleTools() {
+	toolsOpen.value = !toolsOpen.value;
+	if (toolsOpen.value) void loadTrash();
+}
+
+function downloadBackup() {
+	const link = document.createElement("a");
+	link.href = "/api/backup";
+	link.download = "";
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	showNotice("正在生成完整 Library 备份，浏览器会在准备好后开始下载");
+}
+
+async function restoreBackup(file: File) {
+	toolBusy.value = true;
+	try {
+		const result = await api.restoreBackup(file);
+		await Promise.all([loadLibrary(true), loadStatus(), loadTrash()]);
+		const parts = [`恢复 ${result.imported} 项`];
+		if (result.duplicates) parts.push(`${result.duplicates} 项已存在`);
+		if (result.failed) parts.push(`${result.failed} 项失败`);
+		showNotice(result.failed && result.issues?.length ? `${parts.join(" · ")}；${result.issues[0].file}：${result.issues[0].error}` : parts.join(" · "), result.failed > 0, result.failed ? 8000 : 4500);
+	} catch (error) {
+		showNotice(`无法恢复备份：${error instanceof Error ? error.message : "未知错误"}`, true, 8000);
+	} finally {
+		toolBusy.value = false;
+	}
+}
+
+async function restoreTrash(item: TrashItem) {
+	toolBusy.value = true;
+	try {
+		const result = await api.restoreTrash(item.id);
+		await Promise.all([loadLibrary(true), loadTrash()]);
+		showNotice(result.duplicates ? `“${item.name}”已在 Library，Trash 副本已清理` : `已恢复“${item.name}”`);
+	} catch (error) {
+		showNotice(`恢复失败：${error instanceof Error ? error.message : "Trash 原文件仍被保留"}`, true);
+	} finally {
+		toolBusy.value = false;
+	}
 }
 
 async function openInbox(path?: string) {
@@ -234,6 +287,7 @@ async function removeCharacter(character: Character) {
     await api.removeCharacter(character.id);
     selectedID.value = null;
     await loadLibrary(true);
+		await loadTrash();
     showNotice(`“${character.name}”已移至 Shelf Trash`);
   } catch (error) {
     showNotice(`删除失败：${error instanceof Error ? error.message : "原始卡仍被保留"}`, true);
@@ -251,6 +305,7 @@ async function removeResource(resource: ShelfResource) {
     await api.removeResource(resource.id);
     selectedResourceID.value = null;
     await loadLibrary(true);
+		await loadTrash();
     showNotice(`“${resource.name}”已移至 Shelf Trash`);
   } catch (error) {
     showNotice(`删除失败：${error instanceof Error ? error.message : "原始文件仍被保留"}`, true);
@@ -272,10 +327,11 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  void Promise.all([loadLibrary(), loadStatus()]);
+  void Promise.all([loadLibrary(), loadStatus(), loadTrash()]);
   pollTimer = setInterval(() => {
     void loadLibrary(true);
     void loadStatus();
+		if (toolsOpen.value) void loadTrash();
   }, 3000);
   document.addEventListener("keydown", onKeydown);
 });
@@ -289,7 +345,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="grid min-h-screen grid-cols-[76px_minmax(0,1fr)] bg-shelf-canvas max-[610px]:block">
-    <ShelfRail :tools-open="toolsOpen" :active-section="activeSection" @select-section="selectSection" @toggle-tools="toolsOpen = !toolsOpen" />
+    <ShelfRail :tools-open="toolsOpen" :active-section="activeSection" @select-section="selectSection" @toggle-tools="toggleTools" />
 
     <main class="min-w-0 max-[610px]:pb-16">
       <LibraryHeader
@@ -356,12 +412,16 @@ onBeforeUnmount(() => {
     :open="toolsOpen"
     :status="status"
     :busy="toolBusy"
+		:trash-items="trashItems"
     @close="toolsOpen = false"
     @open-inbox="openInbox"
     @add-inbox="addInbox"
     @scan-once="scanOnce"
     @remove-inbox="removeInbox"
     @set-auto-start="setAutoStart"
+		@backup="downloadBackup"
+		@restore-backup="restoreBackup"
+		@restore-trash="restoreTrash"
   />
 
   <CharacterDetailDialog

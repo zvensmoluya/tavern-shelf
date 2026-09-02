@@ -37,6 +37,15 @@ type Status struct {
 	LastErrorAt   time.Time `json:"lastErrorAt,omitempty"`
 	LastErrorFile string    `json:"lastErrorFile,omitempty"`
 	LastError     string    `json:"lastError,omitempty"`
+	Failures      []Failure `json:"failures"`
+}
+
+type Failure struct {
+	Path          string    `json:"path"`
+	File          string    `json:"file"`
+	Error         string    `json:"error"`
+	LastAttemptAt time.Time `json:"lastAttemptAt"`
+	NextRetryAt   time.Time `json:"nextRetryAt"`
 }
 
 type observation struct {
@@ -59,6 +68,7 @@ type Scanner struct {
 
 	mu           sync.RWMutex
 	observations map[string]observation
+	failures     map[string]Failure
 	status       Status
 }
 
@@ -86,7 +96,7 @@ func New(config Config) *Scanner {
 	return &Scanner{
 		inboxes: inboxes, managedInbox: managedInbox, interval: config.Interval, stableFor: config.StableFor,
 		retryAfter: config.RetryAfter, importer: config.Import, logger: config.Logger,
-		onLibraryHit: config.OnLibraryHit, observations: make(map[string]observation),
+		onLibraryHit: config.OnLibraryHit, observations: make(map[string]observation), failures: make(map[string]Failure),
 	}
 }
 
@@ -137,6 +147,7 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 	}
 	sort.Slice(entries, func(a, b int) bool { return entries[a].Name() < entries[b].Name() })
 	pending := 0
+	inboxSeen := make(map[string]struct{})
 	for _, entry := range entries {
 		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -150,10 +161,12 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 			continue
 		}
 		seen[path] = struct{}{}
+		inboxSeen[path] = struct{}{}
 		obs, ok := s.getObservation(path)
 		fingerprintChanged := !ok || obs.size != info.Size() || obs.modified != info.ModTime().UnixNano()
 		if fingerprintChanged {
 			s.setObservation(path, observation{size: info.Size(), modified: info.ModTime().UnixNano(), stableSince: now})
+			s.clearFailure(path)
 			pending++
 			continue
 		}
@@ -174,7 +187,7 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 		if err != nil {
 			obs.nextRetry = now.Add(s.retryAfter)
 			s.setObservation(path, obs)
-			s.recordError(now, entry.Name(), err)
+			s.recordFailure(now, path, err, obs.nextRetry)
 			s.logger.Warn("character import failed", "file", entry.Name(), "error", err, "retry_at", obs.nextRetry)
 			continue
 		}
@@ -184,6 +197,7 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 			obs.imported = true
 			s.setObservation(path, obs)
 		}
+		s.clearFailure(path)
 		pending--
 		s.recordImport(now)
 		if result.Duplicate {
@@ -195,6 +209,7 @@ func (s *Scanner) scanInbox(ctx context.Context, now time.Time, inbox string, se
 			s.onLibraryHit()
 		}
 	}
+	s.pruneFailures(inbox, inboxSeen)
 	return pending, nil
 }
 
@@ -220,7 +235,15 @@ func (s *Scanner) SetInboxes(inboxes []string) {
 func (s *Scanner) Status() Status {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.status
+	status := s.status
+	status.Failures = make([]Failure, 0, len(s.failures))
+	for _, failure := range s.failures {
+		status.Failures = append(status.Failures, failure)
+	}
+	sort.Slice(status.Failures, func(left, right int) bool {
+		return status.Failures[left].LastAttemptAt.After(status.Failures[right].LastAttemptAt)
+	})
+	return status
 }
 
 func (s *Scanner) setRunning(value bool) {
@@ -243,6 +266,41 @@ func (s *Scanner) recordError(now time.Time, name string, err error) {
 	s.status.LastErrorFile = name
 	s.status.LastError = err.Error()
 	s.mu.Unlock()
+}
+
+func (s *Scanner) recordFailure(now time.Time, path string, err error, nextRetry time.Time) {
+	s.mu.Lock()
+	s.failures[path] = Failure{
+		Path: path, File: filepath.Base(path), Error: err.Error(),
+		LastAttemptAt: now.UTC(), NextRetryAt: nextRetry.UTC(),
+	}
+	s.status.LastErrorAt = now.UTC()
+	s.status.LastErrorFile = filepath.Base(path)
+	s.status.LastError = err.Error()
+	s.mu.Unlock()
+}
+
+func (s *Scanner) clearFailure(path string) {
+	s.mu.Lock()
+	delete(s.failures, path)
+	s.mu.Unlock()
+}
+
+func (s *Scanner) pruneFailures(inbox string, seen map[string]struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for path := range s.failures {
+		if filepath.Dir(path) != inbox {
+			continue
+		}
+		if _, ok := seen[path]; !ok {
+			delete(s.failures, path)
+		}
+	}
+	if len(s.failures) == 0 {
+		s.status.LastError = ""
+		s.status.LastErrorFile = ""
+	}
 }
 
 func (s *Scanner) getObservation(path string) (observation, bool) {

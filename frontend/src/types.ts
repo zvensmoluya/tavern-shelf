@@ -164,7 +164,13 @@ export interface ShelfStatus {
     trash: string;
   };
   desktop: { available: boolean; autoStart: boolean };
-  scanner: { running: boolean; pending: number; lastError?: string; lastErrorFile?: string };
+	scanner: {
+		running: boolean;
+		pending: number;
+		lastError?: string;
+		lastErrorFile?: string;
+		failures: Array<{ path: string; file: string; error: string; lastAttemptAt: string; nextRetryAt: string }>;
+	};
 	oneShotScan: {
 		id?: string;
 		directory?: string;
@@ -177,6 +183,24 @@ export interface ShelfStatus {
 		completedAt?: string;
 		issues?: Array<{ file: string; error: string }>;
 	};
+}
+
+export interface TrashItem {
+	id: string;
+	kind: "character" | "worldbook" | "preset" | "unknown";
+	name: string;
+	sourceFilename: string;
+	sourceSize: number;
+	deletedAt: string;
+	error?: string;
+}
+
+export interface RestoreSummary {
+	total: number;
+	imported: number;
+	duplicates: number;
+	failed: number;
+	issues?: Array<{ file: string; error: string }>;
 }
 
 export interface ImportResult {

@@ -108,6 +108,73 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 			"id": id, "kind": result.Kind, "name": result.Name, "duplicate": result.Duplicate,
 		})
 	})
+	mux.HandleFunc("GET /api/backup", func(w http.ResponseWriter, r *http.Request) {
+		file, err := os.CreateTemp(application.Paths.Staging, "backup-*.zip")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("create backup staging file: %w", err))
+			return
+		}
+		path := file.Name()
+		defer os.Remove(path)
+		if _, err := application.WriteBackup(r.Context(), file); err != nil {
+			_ = file.Close()
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if err := file.Close(); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("close backup archive: %w", err))
+			return
+		}
+		file, err = os.Open(path)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("open backup archive: %w", err))
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("inspect backup archive: %w", err))
+			return
+		}
+		name := "Tavern-Shelf-Backup-" + time.Now().Format("20060102-150405") + ".zip"
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+		http.ServeContent(w, r, name, info.ModTime(), file)
+	})
+	mux.HandleFunc("POST /api/backups/restore", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, app.MaxBackupSize+(1<<20))
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("a Tavern Shelf backup ZIP is required"))
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		defer file.Close()
+		summary, err := application.RestoreBackup(r.Context(), file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
+	})
+	mux.HandleFunc("GET /api/trash", func(w http.ResponseWriter, r *http.Request) {
+		items, err := application.ListTrash()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+	mux.HandleFunc("POST /api/trash/{id}/restore", func(w http.ResponseWriter, r *http.Request) {
+		summary, err := application.RestoreTrash(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
+	})
 	mux.HandleFunc("POST /api/inboxes", func(w http.ResponseWriter, r *http.Request) {
 		path, ok := decodeDirectory(w, r)
 		if !ok {

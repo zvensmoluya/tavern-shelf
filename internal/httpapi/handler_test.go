@@ -237,3 +237,73 @@ func TestCreateAndRevokeTransferAPI(t *testing.T) {
 		t.Fatalf("revoke transfer code = %d, body = %s", response.Code, response.Body.String())
 	}
 }
+
+func TestBackupRestoreAndTrashAPI(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	result, err := shelf.ImportUpload(context.Background(), "backup-me.json", bytes.NewBufferString(`{"spec":"chara_card_v2","data":{"name":"Backup Me"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Handler(shelf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/backup", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/zip" || response.Body.Len() == 0 {
+		t.Fatalf("backup response code=%d type=%q size=%d", response.Code, response.Header().Get("Content-Type"), response.Body.Len())
+	}
+	backup := append([]byte(nil), response.Body.Bytes()...)
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/characters/"+result.Character.ID, nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("delete before restore code=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/trash", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var trash []app.TrashItem
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &trash) != nil || len(trash) != 1 {
+		t.Fatalf("Trash response code=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/trash/"+trash[0].ID+"/restore", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Trash restore code=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/characters/"+result.Character.ID, nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("second delete code=%d body=%s", response.Code, response.Body.String())
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "Shelf.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write(backup)
+	_ = writer.Close()
+	request = httptest.NewRequest(http.MethodPost, "/api/backups/restore", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("backup restore code=%d body=%s", response.Code, response.Body.String())
+	}
+	var summary app.RestoreSummary
+	if err := json.Unmarshal(response.Body.Bytes(), &summary); err != nil || summary.Imported != 1 {
+		t.Fatalf("unexpected restore summary: %#v, %v", summary, err)
+	}
+}

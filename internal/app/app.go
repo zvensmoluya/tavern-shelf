@@ -309,7 +309,13 @@ func (a *App) Delete(ctx context.Context, id string) error {
 	if err := os.Rename(managedDir, trashDir); err != nil {
 		return fmt.Errorf("move character to Shelf Trash: %w", err)
 	}
+	metadata := trashMetadata{Kind: "character", Name: character.Name, SourceFilename: character.SourceFilename, DeletedAt: time.Now().UTC()}
+	if err := writeTrashMetadata(trashDir, metadata); err != nil {
+		_ = os.Rename(trashDir, managedDir)
+		return err
+	}
 	if err := a.Store.Delete(ctx, id); err != nil {
+		_ = os.Remove(filepath.Join(trashDir, trashMetadataFilename))
 		if restoreErr := os.Rename(trashDir, managedDir); restoreErr != nil {
 			return fmt.Errorf("delete database row: %v; restore source: %w", err, restoreErr)
 		}
@@ -331,7 +337,13 @@ func (a *App) DeleteResource(ctx context.Context, id string) error {
 	if err := os.Rename(managedDir, trashDir); err != nil {
 		return fmt.Errorf("move resource to Shelf Trash: %w", err)
 	}
+	metadata := trashMetadata{Kind: resource.Kind, Name: resource.Name, SourceFilename: resource.SourceFilename, DeletedAt: time.Now().UTC()}
+	if err := writeTrashMetadata(trashDir, metadata); err != nil {
+		_ = os.Rename(trashDir, managedDir)
+		return err
+	}
 	if err := a.Store.DeleteResource(ctx, id); err != nil {
+		_ = os.Remove(filepath.Join(trashDir, trashMetadataFilename))
 		if restoreErr := os.Rename(trashDir, managedDir); restoreErr != nil {
 			return fmt.Errorf("delete resource database row: %v; restore source: %w", err, restoreErr)
 		}

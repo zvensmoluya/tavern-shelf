@@ -185,6 +185,25 @@ source_rel_path, source_size, imported_at, details_json
 	return nil
 }
 
+func (s *Store) SetImportedAt(ctx context.Context, kind, id string, importedAt time.Time) error {
+	table := "resources"
+	if kind == "character" {
+		table = "characters"
+	}
+	result, err := s.db.ExecContext(ctx, "UPDATE "+table+" SET imported_at = ? WHERE id = ?", importedAt.UTC().Format(time.RFC3339Nano), id)
+	if err != nil {
+		return fmt.Errorf("restore imported time: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect restored import time update: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("restore imported time: %w", ErrNotFound)
+	}
+	return nil
+}
+
 func (s *Store) ListResources(ctx context.Context, kind string) ([]library.Resource, error) {
 	query := `SELECT id, source_hash, kind, subtype, name, description, source_filename,
 source_rel_path, source_size, imported_at, details_json FROM resources`

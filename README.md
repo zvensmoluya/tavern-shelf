@@ -60,7 +60,7 @@ Shelf 只管理自己的根目录：
 Tavern Shelf/
 ├── Inbox/                 默认用户投递目录
 ├── Library/               正式收录的原始 Source
-├── Trash/                 UI 删除后的可恢复内容
+├── Trash/                 UI 删除后的可恢复内容，可从工具面板恢复
 └── AppData/
     ├── shelf.db           SQLite 元数据
     ├── staging/           导入暂存目录
@@ -90,6 +90,9 @@ Shelf 提供三种明确的来源模式：
 - SillyTavern 预设 JSON，识别 Chat Completion、Kobold、NovelAI、Text Generation、Context、Instruct、System Prompt 和 Reasoning 子类型；
 - 角色、世界书和预设使用各自独立的 Library 分类；角色卡内嵌世界书只保留在角色详情中，不会重复创建独立世界书；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；
+- 完整 Library ZIP 备份与合并恢复；备份只包含受管原始资源和可移植清单，恢复时重新解析并校验 SHA-256；
+- Shelf Trash 列表与一键恢复，恢复成功前不会清理 Trash 原文件；
+- 工具面板显示当前无法收录的文件、解析错误、重试时间和一次性扫描问题；
 - 轮询式稳定文件检测，坏文件使用冷却时间，避免高频错误循环。
 
 Content Manifest 只对确定性字段做结构化投影，不执行卡片中的 HTML/JavaScript，也不尝试解释任意脚本语义。原始角色卡始终是 source of truth；旧 Library 会在升级后从 Managed Source 自动补建 Manifest。

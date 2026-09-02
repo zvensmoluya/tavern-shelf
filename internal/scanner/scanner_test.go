@@ -75,12 +75,23 @@ func TestScannerBacksOffInvalidFiles(t *testing.T) {
 	_ = scan.ScanOnce(context.Background(), t0)
 	_ = scan.ScanOnce(context.Background(), t0.Add(2*time.Second))
 	firstError := scan.Status().LastErrorAt
+	failures := scan.Status().Failures
+	if len(failures) != 1 || failures[0].File != "broken.json" || failures[0].Error == "" || !failures[0].NextRetryAt.Equal(t0.Add(2*time.Second).Add(time.Hour).UTC()) {
+		t.Fatalf("unexpected visible import failure: %#v", failures)
+	}
 	_ = scan.ScanOnce(context.Background(), t0.Add(3*time.Second))
 	if !scan.Status().LastErrorAt.Equal(firstError) {
 		t.Fatal("invalid file was retried before cooldown elapsed")
 	}
 	if _, err := os.Stat(source); err != nil {
 		t.Fatalf("invalid source was removed: %v", err)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	_ = scan.ScanOnce(context.Background(), t0.Add(4*time.Second))
+	if failures := scan.Status().Failures; len(failures) != 0 {
+		t.Fatalf("removed file remains in visible failures: %#v", failures)
 	}
 }
 
