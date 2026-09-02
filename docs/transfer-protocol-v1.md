@@ -12,7 +12,7 @@ The QR payload is a plain HTTP URL on the local network:
 http://192.168.1.20:49152/v1/transfers/<opaque-token>
 ```
 
-The sender and receiver must be able to reach each other on the same LAN. The token is URL-safe, randomly generated, and valid for ten minutes unless the user stops sharing earlier.
+The sender and receiver must be able to reach each other on the same LAN. Shelf advertises only RFC 1918 private IPv4 addresses and prefers physical LAN interfaces over recognized VPN and virtual adapters. The token is URL-safe, randomly generated, and valid for ten minutes unless the user stops sharing earlier.
 
 ## Read the manifest
 
@@ -52,7 +52,7 @@ Fields:
 | `size` | Expected source byte length. |
 | `sha256` | Lowercase SHA-256 digest of the source bytes. |
 | `mediaType` | Source MIME type. Treat it as a hint and still parse safely. |
-| `sourceUrl` | Absolute URL for the original source bytes. |
+| `sourceUrl` | Absolute URL for the original source bytes. Its authority is selected from the addresses advertised by the session, never from an untrusted HTTP `Host` value. |
 | `expiresAt` | RFC 3339 session expiry. |
 
 ## Download and import
@@ -79,3 +79,5 @@ Both endpoints support `GET` and `HEAD`. Successful manifest and source response
 Responses use `Cache-Control: no-store`. The transfer endpoint allows cross-origin reads so a browser-based receiver can implement the same flow.
 
 The receiver must treat the URL token as a secret for the lifetime of the session and must not persist it after import.
+
+Before serving the source, Shelf reopens the managed file and verifies that its byte length and SHA-256 still match the session manifest. A changed source returns HTTP 410 rather than transferring bytes under stale metadata.

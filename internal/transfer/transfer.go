@@ -3,7 +3,9 @@ package transfer
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -81,6 +84,13 @@ type Server struct {
 	listener net.Listener
 	http     *http.Server
 	port     int
+}
+
+type addressCandidate struct {
+	host          string
+	interfaceName string
+	virtual       bool
+	preferred     bool
 }
 
 func NewServer(resolver Resolver) *Server {
@@ -234,12 +244,11 @@ func (s *Server) removeExpiredLocked() {
 }
 
 func (s *Server) serveManifest(w http.ResponseWriter, r *http.Request, session Session) {
-	scheme := "http"
 	manifest := Manifest{
 		Protocol: Protocol, Version: Version, Kind: session.Kind, Subtype: session.Subtype,
 		Name: session.Name, Filename: session.Filename, Size: session.Size, SHA256: session.SHA256,
 		MediaType: session.source.ContentType,
-		SourceURL: scheme + "://" + r.Host + "/v1/transfers/" + session.ID + "/source",
+		SourceURL: transferSourceURL(session, r.Host),
 		ExpiresAt: session.ExpiresAt,
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -255,6 +264,19 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request, session Ses
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
+		writeError(w, http.StatusGone, "shared source is no longer available")
+		return
+	}
+	if info.Size() != session.Size {
+		writeError(w, http.StatusGone, "shared source changed after the transfer session was created")
+		return
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil || !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), session.SHA256) {
+		writeError(w, http.StatusGone, "shared source changed after the transfer session was created")
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		writeError(w, http.StatusGone, "shared source is no longer available")
 		return
 	}
@@ -278,6 +300,22 @@ func validateSource(source *Source) error {
 		return errors.New("transfer source is not a regular file")
 	}
 	source.Size = info.Size()
+	file, err := os.Open(source.Path)
+	if err != nil {
+		return fmt.Errorf("open transfer source: %w", err)
+	}
+	hash := sha256.New()
+	_, copyErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return fmt.Errorf("hash transfer source: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close transfer source: %w", closeErr)
+	}
+	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), source.SHA256) {
+		return errors.New("transfer source failed its SHA-256 integrity check")
+	}
 	return nil
 }
 
@@ -290,11 +328,8 @@ func randomToken() (string, error) {
 }
 
 func localAddresses(port int, token string) []string {
-	hosts := make([]string, 0, 4)
 	preferred := preferredLocalIPv4()
-	if preferred != "" {
-		hosts = append(hosts, preferred)
-	}
+	candidates := make([]addressCandidate, 0, 4)
 	interfaces, _ := net.Interfaces()
 	for _, iface := range interfaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
@@ -303,27 +338,72 @@ func localAddresses(port int, token string) []string {
 		addresses, _ := iface.Addrs()
 		for _, address := range addresses {
 			ip, _, err := net.ParseCIDR(address.String())
-			if err != nil || ip.To4() == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			if err != nil || !isPrivateIPv4(ip) {
 				continue
 			}
-			hosts = append(hosts, ip.String())
+			candidates = append(candidates, addressCandidate{
+				host: ip.String(), interfaceName: iface.Name,
+				virtual: isLikelyVirtualInterface(iface), preferred: ip.String() == preferred,
+			})
 		}
 	}
-	hosts = unique(hosts)
-	sort.SliceStable(hosts, func(i, j int) bool {
-		if hosts[i] == preferred {
-			return true
-		}
-		if hosts[j] == preferred {
-			return false
-		}
-		return addressRank(hosts[i]) < addressRank(hosts[j])
-	})
-	result := make([]string, 0, len(hosts))
-	for _, host := range hosts {
-		result = append(result, fmt.Sprintf("http://%s:%d/v1/transfers/%s", host, port, token))
+	candidates = rankAddressCandidates(candidates)
+	result := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		result = append(result, fmt.Sprintf("http://%s:%d/v1/transfers/%s", candidate.host, port, token))
 	}
 	return result
+}
+
+func rankAddressCandidates(candidates []addressCandidate) []addressCandidate {
+	byHost := make(map[string]addressCandidate, len(candidates))
+	for _, candidate := range candidates {
+		existing, ok := byHost[candidate.host]
+		if !ok || addressCandidateScore(candidate) < addressCandidateScore(existing) {
+			byHost[candidate.host] = candidate
+		}
+	}
+	result := make([]addressCandidate, 0, len(byHost))
+	for _, candidate := range byHost {
+		result = append(result, candidate)
+	}
+	sort.SliceStable(result, func(left, right int) bool {
+		leftScore, rightScore := addressCandidateScore(result[left]), addressCandidateScore(result[right])
+		if leftScore != rightScore {
+			return leftScore < rightScore
+		}
+		return result[left].host < result[right].host
+	})
+	return result
+}
+
+func addressCandidateScore(candidate addressCandidate) int {
+	score := addressRank(candidate.host) * 10
+	if candidate.virtual {
+		score += 100
+	}
+	if candidate.preferred {
+		score -= 50
+	}
+	return score
+}
+
+func isPrivateIPv4(ip net.IP) bool {
+	ip = ip.To4()
+	return ip != nil && (ip[0] == 10 || ip[0] == 192 && ip[1] == 168 || ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31)
+}
+
+func isLikelyVirtualInterface(iface net.Interface) bool {
+	if iface.Flags&net.FlagPointToPoint != 0 {
+		return true
+	}
+	name := strings.ToLower(iface.Name)
+	for _, marker := range []string{"vethernet", "hyper-v", "wsl", "docker", "vmware", "virtualbox", "tailscale", "zerotier", "wireguard", "vpn", "tunnel", "tap", "tun"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func preferredLocalIPv4() string {
@@ -356,16 +436,22 @@ func addressRank(value string) int {
 	return 3
 }
 
-func unique(values []string) []string {
-	seen := make(map[string]bool)
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if value != "" && !seen[value] {
-			seen[value] = true
-			result = append(result, value)
+func transferSourceURL(session Session, requestHost string) string {
+	host := ""
+	for _, address := range session.Addresses {
+		parsed, err := url.Parse(address)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		if host == "" {
+			host = parsed.Host
+		}
+		if strings.EqualFold(parsed.Host, requestHost) {
+			host = parsed.Host
+			break
 		}
 	}
-	return result
+	return "http://" + host + "/v1/transfers/" + session.ID + "/source"
 }
 
 func contentType(filename string) string {

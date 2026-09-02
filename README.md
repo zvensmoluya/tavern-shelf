@@ -32,8 +32,10 @@ go run ./cmd/tavern-shelf -data-dir .\data -listen 127.0.0.1:8787
 Windows 桌面开发模式：
 
 ```powershell
-go run ./cmd/tavern-shelf-desktop
+.\scripts\run-windows-dev.ps1
 ```
+
+该脚本始终构建并运行 `build/dev/TavernShelf-dev.exe`，让 Windows 防火墙能够稳定识别同一个调试程序。使用 `go run ./cmd/tavern-shelf-desktop` 会在临时目录生成不同的 EXE，测试局域网二维码传输时可能反复出现防火墙确认。首次分享时只允许“专用网络”；调试程序仍在系统托盘运行时，应先从托盘退出再重新构建。
 
 前端源码位于 `frontend/`，使用 Vue 3、Vite、TypeScript、Tailwind CSS、Reka UI primitives 和 Lucide。开发前端时可分别启动 Go headless 服务和 Vite：
 
@@ -89,6 +91,7 @@ Shelf 提供三种明确的来源模式：
 - 独立分发的 SillyTavern 世界书 JSON，按文件名命名并展示条目、关键词、启用状态与正文；
 - SillyTavern 预设 JSON，识别 Chat Completion、Kobold、NovelAI、Text Generation、Context、Instruct、System Prompt 和 Reasoning 子类型；
 - 角色、世界书和预设使用各自独立的 Library 分类；角色卡内嵌世界书只保留在角色详情中，不会重复创建独立世界书；
+- 二维码传输只公布 RFC1918 私有 IPv4，优先物理局域网接口并降低 VPN、Hyper-V、WSL、Docker 等虚拟网卡优先级；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；
 - 完整 Library ZIP 备份与合并恢复；备份只包含受管原始资源和可移植清单，恢复时重新解析并校验 SHA-256；
 - Shelf Trash 列表与一键恢复，恢复成功前不会清理 Trash 原文件；
