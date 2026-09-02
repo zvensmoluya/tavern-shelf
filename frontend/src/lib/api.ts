@@ -1,4 +1,4 @@
-import type { Character, ImportResult, RestoreSummary, ShelfResource, ShelfStatus, TransferSession, TransferTarget, TrashItem } from "@/types";
+import type { Character, ConnectorPairing, ConnectorStatus, ImportResult, RestoreSummary, ShelfResource, ShelfStatus, TransferSession, TransferTarget, TrashItem } from "@/types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -13,6 +13,9 @@ export const api = {
   listCharacters: () => request<Character[]>("/api/characters"),
   listResources: () => request<ShelfResource[]>("/api/resources"),
   status: () => request<ShelfStatus>("/api/status"),
+  connectorStatus: () => request<ConnectorStatus>("/api/connector"),
+  beginConnectorPairing: () => request<ConnectorPairing>("/api/connector/pairing", { method: "POST" }),
+  revokeConnectorPairing: () => request<void>("/api/connector/pairing", { method: "DELETE" }),
   chooseInbox: () => request<{ path: string }>("/api/desktop/choose-inbox", { method: "POST" }),
   addInbox: (path: string) => request<void>("/api/inboxes", {
     method: "POST",

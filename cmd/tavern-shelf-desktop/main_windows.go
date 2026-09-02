@@ -5,14 +5,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"image"
 	"image/color"
 	"image/png"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/openai/tavern-shelf/internal/app"
 	"github.com/openai/tavern-shelf/internal/desktop"
@@ -31,6 +35,7 @@ var instanceKey = [32]byte{
 func main() {
 	dataDir := flag.String("data-dir", "", "managed data directory")
 	background := flag.Bool("background", false, "start hidden in the system tray")
+	connectorListen := flag.String("connector-listen", "127.0.0.1:8787", "local connector listen address")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -44,12 +49,27 @@ func main() {
 		_ = shelf.Close()
 		panic(err)
 	}
+	connectorServer := &http.Server{Handler: httpapi.ConnectorHandler(shelf), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second}
+	connectorListener, listenErr := net.Listen("tcp", *connectorListen)
+	if listenErr != nil {
+		shelf.Connector.SetListener(*connectorListen, listenErr)
+		logger.Warn("Tavern Shelf connector is unavailable", "address", *connectorListen, "error", listenErr)
+	} else {
+		shelf.Connector.SetListener(connectorListener.Addr().String(), nil)
+		go func() {
+			if err := connectorServer.Serve(connectorListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				shelf.Connector.SetListener(*connectorListen, err)
+				logger.Warn("Tavern Shelf connector stopped", "error", err)
+			}
+		}()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var shutdownOnce sync.Once
 	shutdown := func() {
 		shutdownOnce.Do(func() {
 			cancel()
+			_ = connectorServer.Close()
 			_ = shelf.Close()
 		})
 	}

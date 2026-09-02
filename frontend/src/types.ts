@@ -209,3 +209,19 @@ export interface ImportResult {
 	name: string;
 	duplicate: boolean;
 }
+
+export interface ConnectorStatus {
+  protocol: "tavern-shelf-connector";
+  version: number;
+  listening: boolean;
+  address?: string;
+  listenerError?: string;
+  paired: boolean;
+  client?: { name: string; version?: string; pairedAt: string };
+  pairingExpiresAt?: string;
+}
+
+export interface ConnectorPairing {
+  code: string;
+  expiresAt: string;
+}

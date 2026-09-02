@@ -161,7 +161,7 @@ func (a *App) RestoreBackup(ctx context.Context, source io.Reader) (RestoreSumma
 			summary.addIssue(item.SourceFilename, err)
 			continue
 		}
-		result, importErr := a.importReader(ctx, item.SourceFilename, stream, maxBackupItemSize, errBackupItemTooLarge, "restore-item-")
+		result, importErr := a.importReader(ctx, item.SourceFilename, stream, maxBackupItemSize, errBackupItemTooLarge, "restore-item-", false)
 		closeErr := stream.Close()
 		if importErr == nil && closeErr != nil {
 			importErr = closeErr

@@ -12,11 +12,13 @@ import ShelfRail from "@/components/ShelfRail.vue";
 import ShelfToolsPanel from "@/components/ShelfToolsPanel.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
 import { api } from "@/lib/api";
-import type { Character, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
+import type { Character, ConnectorPairing, ConnectorStatus, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
 
 const characters = ref<Character[]>([]);
 const resources = ref<ShelfResource[]>([]);
 const status = ref<ShelfStatus | null>(null);
+const connectorStatus = ref<ConnectorStatus | null>(null);
+const connectorPairing = ref<ConnectorPairing | null>(null);
 const trashItems = ref<TrashItem[]>([]);
 const activeSection = ref<LibrarySection>("characters");
 const query = ref("");
@@ -93,6 +95,41 @@ async function loadStatus() {
     status.value = await api.status();
   } catch {
     // Polling will retry without interrupting Library browsing.
+  }
+}
+
+async function loadConnectorStatus() {
+  try {
+    connectorStatus.value = await api.connectorStatus();
+    if (connectorPairing.value && new Date(connectorPairing.value.expiresAt).getTime() <= Date.now()) connectorPairing.value = null;
+  } catch {
+    // Polling will retry.
+  }
+}
+
+async function beginConnectorPairing() {
+  toolBusy.value = true;
+  try {
+    connectorPairing.value = await api.beginConnectorPairing();
+    await loadConnectorStatus();
+  } catch (error) {
+    showNotice(`无法生成配对码：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    toolBusy.value = false;
+  }
+}
+
+async function revokeConnectorPairing() {
+  toolBusy.value = true;
+  try {
+    await api.revokeConnectorPairing();
+    connectorPairing.value = null;
+    await loadConnectorStatus();
+    showNotice("已撤销 SillyTavern 配对");
+  } catch (error) {
+    showNotice(`无法撤销配对：${error instanceof Error ? error.message : "未知错误"}`, true);
+  } finally {
+    toolBusy.value = false;
   }
 }
 
@@ -327,10 +364,11 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  void Promise.all([loadLibrary(), loadStatus(), loadTrash()]);
+  void Promise.all([loadLibrary(), loadStatus(), loadConnectorStatus(), loadTrash()]);
   pollTimer = setInterval(() => {
     void loadLibrary(true);
     void loadStatus();
+    void loadConnectorStatus();
 		if (toolsOpen.value) void loadTrash();
   }, 3000);
   document.addEventListener("keydown", onKeydown);
@@ -411,6 +449,8 @@ onBeforeUnmount(() => {
   <ShelfToolsPanel
     :open="toolsOpen"
     :status="status"
+    :connector-status="connectorStatus"
+    :connector-pairing="connectorPairing"
     :busy="toolBusy"
 		:trash-items="trashItems"
     @close="toolsOpen = false"
@@ -421,7 +461,9 @@ onBeforeUnmount(() => {
     @set-auto-start="setAutoStart"
 		@backup="downloadBackup"
 		@restore-backup="restoreBackup"
-		@restore-trash="restoreTrash"
+                @restore-trash="restoreTrash"
+    @begin-connector-pairing="beginConnectorPairing"
+    @revoke-connector-pairing="revokeConnectorPairing"
   />
 
   <CharacterDetailDialog

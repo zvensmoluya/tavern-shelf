@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Activity, AlertTriangle, ArchiveRestore, Download, FolderInput, FolderMinus, FolderOpen, FolderPlus, Power, RotateCcw, Upload, X } from "@lucide/vue";
-import type { ShelfStatus, TrashItem } from "@/types";
+import { Activity, AlertTriangle, ArchiveRestore, Download, FolderInput, FolderMinus, FolderOpen, FolderPlus, Plug, Power, RotateCcw, Unplug, Upload, X } from "@lucide/vue";
+import type { ConnectorPairing, ConnectorStatus, ShelfStatus, TrashItem } from "@/types";
 import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 
-defineProps<{ open: boolean; status: ShelfStatus | null; busy: boolean; trashItems: TrashItem[] }>();
+defineProps<{ open: boolean; status: ShelfStatus | null; connectorStatus: ConnectorStatus | null; connectorPairing: ConnectorPairing | null; busy: boolean; trashItems: TrashItem[] }>();
 const emit = defineEmits<{
   close: [];
   openInbox: [path: string];
@@ -15,7 +15,9 @@ const emit = defineEmits<{
   setAutoStart: [enabled: boolean];
 	backup: [];
 	restoreBackup: [file: File];
-	restoreTrash: [item: TrashItem];
+        restoreTrash: [item: TrashItem];
+        beginConnectorPairing: [];
+        revokeConnectorPairing: [];
 }>();
 
 const restoreInput = ref<HTMLInputElement | null>(null);
@@ -100,6 +102,28 @@ function onBackupSelected(event: Event) {
 			</div>
 			<p v-else class="text-[9px] leading-5 text-shelf-quiet">Trash 是空的。移除的资源会先保存在这里。</p>
 		</section>
+
+        <section class="border-b border-shelf-line p-4">
+          <div class="mb-2 flex items-center gap-2 text-shelf-muted">
+            <Plug :size="15" :stroke-width="1.7" aria-hidden="true" />
+            <span class="text-[9px] font-semibold tracking-[.12em]">SILLYTAVERN CONNECTOR</span>
+          </div>
+          <div class="rounded-lg border border-shelf-line bg-black/10 px-2.5 py-2 text-[9px] leading-5 text-shelf-muted">
+            <p v-if="connectorStatus?.listening" class="text-shelf-success">本机服务已就绪 · {{ connectorStatus.address || "127.0.0.1:8787" }}</p>
+            <p v-else class="text-red-200/80">连接器不可用<span v-if="connectorStatus?.listenerError"> · {{ connectorStatus.listenerError }}</span></p>
+            <p v-if="connectorStatus?.paired" class="truncate">已配对 · {{ connectorStatus.client?.name || "SillyTavern" }}<span v-if="connectorStatus.client?.version"> {{ connectorStatus.client.version }}</span></p>
+            <p v-else>尚未配对 SillyTavern 扩展</p>
+          </div>
+          <div v-if="connectorPairing" class="mt-2 rounded-lg border border-amber-300/20 bg-amber-300/[.05] px-3 py-2 text-center">
+            <p class="font-mono text-[22px] tracking-[.28em] text-amber-100">{{ connectorPairing.code }}</p>
+            <p class="mt-1 text-[8px] text-shelf-quiet">在扩展中输入；有效至 {{ new Date(connectorPairing.expiresAt).toLocaleTimeString() }}</p>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <ShelfButton :icon="Plug" :disabled="busy || !connectorStatus?.listening" @click="$emit('beginConnectorPairing')">{{ connectorStatus?.paired ? "重新配对" : "生成配对码" }}</ShelfButton>
+            <ShelfButton v-if="connectorStatus?.paired" :icon="Unplug" :disabled="busy" @click="$emit('revokeConnectorPairing')">撤销配对</ShelfButton>
+          </div>
+          <p class="mt-2 text-[9px] leading-5 text-shelf-quiet">只允许本机 SillyTavern 访问。重新配对会立即撤销旧令牌。</p>
+        </section>
 
         <section v-if="status?.desktop.available" class="border-b border-shelf-line p-4">
           <label class="flex cursor-pointer items-center justify-between gap-4">

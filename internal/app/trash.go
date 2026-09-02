@@ -79,7 +79,7 @@ func (a *App) RestoreTrash(ctx context.Context, id string) (RestoreSummary, erro
 	if err != nil {
 		return RestoreSummary{}, fmt.Errorf("open Trash source: %w", err)
 	}
-	result, importErr := a.importReader(ctx, item.SourceFilename, file, maxBackupItemSize, errBackupItemTooLarge, "trash-restore-")
+	result, importErr := a.importReader(ctx, item.SourceFilename, file, maxBackupItemSize, errBackupItemTooLarge, "trash-restore-", false)
 	closeErr := file.Close()
 	if importErr != nil {
 		return RestoreSummary{}, fmt.Errorf("restore Trash source: %w", importErr)

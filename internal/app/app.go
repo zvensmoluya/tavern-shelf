@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/openai/tavern-shelf/internal/card"
+	"github.com/openai/tavern-shelf/internal/connector"
 	"github.com/openai/tavern-shelf/internal/importer"
 	"github.com/openai/tavern-shelf/internal/library"
 	"github.com/openai/tavern-shelf/internal/paths"
@@ -26,6 +27,7 @@ type App struct {
 	Scanner      *scanner.Scanner
 	Importer     *importer.Importer
 	Transfers    *transfer.Server
+	Connector    *connector.Service
 	logger       *slog.Logger
 	inboxMu      sync.Mutex
 	runCtx       context.Context
@@ -88,6 +90,12 @@ func Open(options Options) (*App, error) {
 		runCtx: runCtx, cancel: cancel, stableFor: options.StableFor, onLibraryHit: options.OnLibraryHit,
 	}
 	result.Transfers = transfer.NewServer(result.resolveTransferSource)
+	result.Connector, err = connector.Open(filepath.Join(p.AppData, "connector.json"))
+	if err != nil {
+		cancel()
+		_ = s.Close()
+		return nil, err
+	}
 	if err := result.backfillManifests(context.Background()); err != nil {
 		cancel()
 		_ = s.Close()

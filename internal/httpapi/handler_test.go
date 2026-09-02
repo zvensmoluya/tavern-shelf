@@ -307,3 +307,73 @@ func TestBackupRestoreAndTrashAPI(t *testing.T) {
 		t.Fatalf("unexpected restore summary: %#v, %v", summary, err)
 	}
 }
+
+func TestConnectorPairAuthorizeCORSAndImport(t *testing.T) {
+	shelf, err := app.Open(app.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	pairing, err := shelf.Connector.BeginPairing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := ConnectorHandler(shelf)
+	raw, _ := json.Marshal(map[string]string{"code": pairing.Code, "clientName": "ST Test", "clientVersion": "1.18.0"})
+	request := httptest.NewRequest(http.MethodPost, "/connector/v1/pair", bytes.NewReader(raw))
+	request.Header.Set("Origin", "http://127.0.0.1:8000")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var paired struct {
+		Token string `json:"token"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &paired) != nil || paired.Token == "" {
+		t.Fatalf("pair response code=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/connector/v1/characters", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized list code=%d", response.Code)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, _ := writer.CreateFormFile("file", "from-st.json")
+	_, _ = part.Write([]byte(`{"spec":"chara_card_v2","data":{"name":"From ST","description":"Safe"}}`))
+	_ = writer.Close()
+	request = httptest.NewRequest(http.MethodPost, "/connector/v1/imports", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Authorization", "Bearer "+paired.Token)
+	request.Header.Set("Origin", "http://localhost:8000")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || response.Header().Get("Access-Control-Allow-Origin") != "http://localhost:8000" {
+		t.Fatalf("import response code=%d body=%s", response.Code, response.Body.String())
+	}
+
+	body.Reset()
+	writer = multipart.NewWriter(&body)
+	part, _ = writer.CreateFormFile("file", "world.json")
+	_, _ = part.Write([]byte(`{"entries":{"0":{"key":["city"],"content":"City"}}}`))
+	_ = writer.Close()
+	request = httptest.NewRequest(http.MethodPost, "/connector/v1/imports", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Authorization", "Bearer "+paired.Token)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	resources, listErr := shelf.ListResources(context.Background(), "")
+	if response.Code != http.StatusBadRequest || listErr != nil || len(resources) != 0 {
+		t.Fatalf("standalone resource import code=%d resources=%d err=%v", response.Code, len(resources), listErr)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/connector/v1/characters", nil)
+	request.Header.Set("Authorization", "Bearer "+paired.Token)
+	request.Header.Set("Origin", "https://evil.example")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("forbidden origin code=%d", response.Code)
+	}
+}

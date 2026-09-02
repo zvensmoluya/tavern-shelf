@@ -32,6 +32,11 @@ func Handler(application *app.App, desktopActions ...DesktopActions) (http.Handl
 		return nil, fmt.Errorf("open embedded UI: %w", err)
 	}
 	mux := http.NewServeMux()
+	registerConnectorManagement(mux, application)
+	connectorHandler := ConnectorHandler(application)
+	mux.Handle("GET /connector/", connectorHandler)
+	mux.Handle("POST /connector/", connectorHandler)
+	mux.Handle("OPTIONS /connector/", connectorHandler)
 	var desktop DesktopActions
 	if len(desktopActions) > 0 {
 		desktop = desktopActions[0]

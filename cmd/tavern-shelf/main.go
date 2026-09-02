@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -48,10 +49,16 @@ func run() error {
 		Addr: *listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second,
 	}
+	listener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		shelf.Connector.SetListener(*listen, err)
+		return fmt.Errorf("listen on %s: %w", *listen, err)
+	}
+	shelf.Connector.SetListener(listener.Addr().String(), nil)
 	serveDone := make(chan error, 1)
 	go func() {
 		logger.Info("Tavern Shelf is ready", "url", "http://"+*listen, "inboxes", shelf.Inboxes())
-		serveDone <- server.ListenAndServe()
+		serveDone <- server.Serve(listener)
 	}()
 
 	select {

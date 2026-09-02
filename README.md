@@ -1,5 +1,7 @@
 # Tavern Shelf
 
+SillyTavern 可通过独立的 Tavern Shelf Connector 扩展在本机双向传输角色卡。桌面版默认监听 `127.0.0.1:8787`，使用短码配对和可撤销令牌；第三方客户端对接说明见 [Connector Protocol v1](docs/connector-protocol-v1.md)。
+
 Tavern Shelf 是 Tavern Player 的本地角色卡资源库。把 SillyTavern 资源放进 Shelf 自己的默认 Inbox 后，Shelf 会等待文件写入稳定、解析内容、按内容哈希去重，并把原始文件安全收录到自己管理的 Library。也可以长期监视外部目录、只扫描某个目录一次，或者直接把文件拖到 Shelf 窗口；这三种方式都只复制收藏，源文件始终留在原处。
 
 当前仓库已经包含本地资源收录的完整纵向路径：
