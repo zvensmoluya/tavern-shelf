@@ -190,6 +190,27 @@ func TestAddInboxRejectsManagedDirectories(t *testing.T) {
 	}
 }
 
+func TestRemoveInboxAfterDirectoryDisappears(t *testing.T) {
+	external := t.TempDir()
+	shelf, err := Open(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = shelf.Close() })
+	if err := shelf.AddInbox(context.Background(), external); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(external); err != nil {
+		t.Fatal(err)
+	}
+	if err := shelf.RemoveInbox(context.Background(), external); err != nil {
+		t.Fatalf("remove missing Inbox: %v", err)
+	}
+	if directories := shelf.Inboxes(); len(directories) != 1 || !samePath(directories[0], shelf.Paths.Inbox) {
+		t.Fatalf("unexpected Inbox settings: %#v", directories)
+	}
+}
+
 func TestDeleteResourceOnlyMovesManagedSourceToTrash(t *testing.T) {
 	shelf, err := Open(Options{DataDir: t.TempDir()})
 	if err != nil {

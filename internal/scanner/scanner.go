@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/openai/tavern-shelf/internal/card"
 	"github.com/openai/tavern-shelf/internal/importer"
+	pathutil "github.com/openai/tavern-shelf/internal/paths"
 )
 
 type Config struct {
@@ -202,12 +202,7 @@ func samePath(left, right string) bool {
 	if left == "" || right == "" {
 		return false
 	}
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(left, right)
-	}
-	return left == right
+	return pathutil.Same(left, right)
 }
 
 func (s *Scanner) Inboxes() []string {

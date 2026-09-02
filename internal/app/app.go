@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -189,10 +188,6 @@ func (a *App) validateInbox(directory string) (string, error) {
 	abs, err := filepath.Abs(directory)
 	if err != nil {
 		return "", fmt.Errorf("resolve Inbox directory: %w", err)
-	}
-	abs, err = filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("resolve Inbox directory links: %w", err)
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
@@ -390,26 +385,13 @@ func (a *App) backfillManifests(ctx context.Context) error {
 }
 
 func isWithin(parent, child string) bool {
-	rel, err := filepath.Rel(parent, child)
-	if err != nil {
-		return false
-	}
-	return rel != "." && rel != ".." && !filepath.IsAbs(rel) && len(rel) > 0 && rel[:1] != "."
+	return paths.IsWithin(parent, child)
 }
 
 func isSameOrWithin(parent, child string) bool {
-	if samePath(parent, child) {
-		return true
-	}
-	rel, err := filepath.Rel(parent, child)
-	return err == nil && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return paths.IsSameOrWithin(parent, child)
 }
 
 func samePath(left, right string) bool {
-	left = filepath.Clean(left)
-	right = filepath.Clean(right)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(left, right)
-	}
-	return left == right
+	return paths.Same(left, right)
 }

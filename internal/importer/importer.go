@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -240,29 +239,17 @@ func copyAndHash(source, destination string) (string, error) {
 }
 
 func ensureDirectChild(parent, child string) error {
-	parentAbs, err := filepath.Abs(parent)
+	parentAbs, err := paths.Canonical(parent)
 	if err != nil {
 		return fmt.Errorf("resolve inbox: %w", err)
 	}
-	parentAbs, err = filepath.EvalSymlinks(parentAbs)
-	if err != nil {
-		return fmt.Errorf("resolve inbox links: %w", err)
-	}
-	childAbs, err := filepath.Abs(child)
+	childAbs, err := paths.Canonical(child)
 	if err != nil {
 		return fmt.Errorf("resolve inbox item: %w", err)
 	}
-	childAbs, err = filepath.EvalSymlinks(childAbs)
-	if err != nil {
-		return fmt.Errorf("resolve inbox item links: %w", err)
-	}
 	parentDir := filepath.Clean(parentAbs)
 	childDir := filepath.Clean(filepath.Dir(childAbs))
-	matches := parentDir == childDir
-	if runtime.GOOS == "windows" {
-		matches = strings.EqualFold(parentDir, childDir)
-	}
-	if !matches {
+	if !paths.Same(parentDir, childDir) {
 		return errors.New("import source must be a direct child of a configured Inbox")
 	}
 	return nil
