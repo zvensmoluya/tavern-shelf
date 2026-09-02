@@ -35,7 +35,7 @@ func TestCompilerUsesResponsesAPIAndNormalizesProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := compiler.Compile(context.Background(), ProgramView{SchemaVersion: 1, SourceSHA256: sourceHash})
+	result, err := compiler.Compile(context.Background(), compilerProgramView(sourceHash))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,12 +68,26 @@ func TestCompilerRepairsInvalidFirstOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := compiler.Compile(context.Background(), ProgramView{SchemaVersion: 1, SourceSHA256: strings.Repeat("a", 64)})
+	result, err := compiler.Compile(context.Background(), compilerProgramView(strings.Repeat("a", 64)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 || result.Attempts != 2 {
 		t.Fatalf("repair attempts = %d/%d, want 2", calls, result.Attempts)
+	}
+}
+
+func compilerProgramView(sourceHash string) ProgramView {
+	return ProgramView{
+		SchemaVersion: ProgramViewSchemaVersion,
+		SourceSHA256:  sourceHash,
+		ProgramBlocks: []ProgramBlock{{Enabled: true, TriggerPattern: "<FORM_PLACEHOLDER/>"}},
+		StateProtocolHints: []StateProtocolHint{{
+			Dialect: "UPDATE_VARIABLE_SET_V1",
+			Values: []StateValueHint{{
+				Path: "game.visits", Type: "NUMBER", InitialValue: json.RawMessage(`0`),
+			}},
+		}},
 	}
 }
 

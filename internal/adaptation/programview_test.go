@@ -19,7 +19,7 @@ func TestExtractProgramViewKeepsOnlySanitizedProgramSurface(t *testing.T) {
   "data":{
     "name":"Safe Test",
     "description":"PRIVATE NARRATIVE",
-    "first_mes":"PRIVATE GREETING",
+    "first_mes":"PRIVATE GREETING\n<FORM_PLACEHOLDER/>",
     "character_book":{"entries":[
       {"id":7,"comment":"Private place","content":"PRIVATE WORLD BOOK","enabled":true}
     ]},
@@ -56,6 +56,9 @@ func TestExtractProgramViewKeepsOnlySanitizedProgramSurface(t *testing.T) {
 	}
 	if len(view.ProgramBlocks) != 2 {
 		t.Fatalf("program block count = %d, want 2: %#v", len(view.ProgramBlocks), view.ProgramBlocks)
+	}
+	if view.ProgramBlocks[0].TriggerMatchMode != "MESSAGE_CONTAINS" {
+		t.Fatalf("trigger match mode = %q, want MESSAGE_CONTAINS", view.ProgramBlocks[0].TriggerMatchMode)
 	}
 	if len(view.WorldBookHandles) != 1 || view.WorldBookHandles[0].Handle != "worldbook:0:7" {
 		t.Fatalf("world-book handles were not preserved: %#v", view.WorldBookHandles)
@@ -101,6 +104,61 @@ func TestExtractProgramViewRejectsInvalidSourceHash(t *testing.T) {
 	t.Parallel()
 	if _, err := ExtractProgramView("unused.json", "not-a-hash"); err == nil {
 		t.Fatal("expected invalid source hash to fail before reading the card")
+	}
+}
+
+func TestExtractProgramViewReducesUpdateVariableWorldBookToPrimitiveStateHints(t *testing.T) {
+	t.Parallel()
+	raw := `{
+  "spec":"chara_card_v3",
+  "data":{
+    "name":"State Test",
+    "character_book":{"entries":[
+      {"comment":"旧变量更新规则","content":"<UpdateVariable>\n_.set('停用.路径', 0, 1);\n</UpdateVariable>","enabled":false},
+      {"comment":"变量更新规则","content":"<status_current_variables>{{get_message_variable::stat_data}}</status_current_variables>\n<UpdateVariable>\n_.set('${path_of_changed_variable}', 0, 1);\n_.set('世界.日期', 1, 2);\n</UpdateVariable>","enabled":true},
+      {"comment":"[InitVar]损坏副本","content":"{\"泄漏\":[\"TRAILING PRIVATE\",\"description\"]} trailing","enabled":false},
+      {"comment":"[InitVar]初始化","content":"{\"世界\":{\"日期\":[1,\"PRIVATE DESCRIPTION\"],\"地点\":[\"https://user:pass@example.test/private?token=secret\",\"PRIVATE LOCATION DESCRIPTION\"]},\"角色\":{\"好感度\":[50,\"PRIVATE RELATIONSHIP DESCRIPTION\"]}}","enabled":false}
+    ]},
+    "extensions":{}
+  }
+}`
+	path := filepath.Join(t.TempDir(), "card.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(raw))
+	view, err := ExtractProgramView(path, hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.StateProtocolHints) != 1 {
+		t.Fatalf("state protocol hints = %#v", view.StateProtocolHints)
+	}
+	hint := view.StateProtocolHints[0]
+	if hint.Dialect != "UPDATE_VARIABLE_SET_V1" || hint.VariableName != "stat_data" || len(hint.Values) != 3 {
+		t.Fatalf("unexpected protocol hint: %#v", hint)
+	}
+	values := map[string]StateValueHint{}
+	for _, value := range hint.Values {
+		values[value.Path] = value
+	}
+	if date := values["世界.日期"]; string(date.InitialValue) != `1` || date.Type != "NUMBER" {
+		t.Fatalf("unexpected date state hint: %#v", date)
+	}
+	encoded := mustJSON(t, view)
+	for _, forbidden := range []string{"PRIVATE DESCRIPTION", "PRIVATE LOCATION DESCRIPTION", "PRIVATE RELATIONSHIP DESCRIPTION", "TRAILING PRIVATE", "user:pass", "token=secret"} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("state hint leaked %q: %s", forbidden, encoded)
+		}
+	}
+	if !strings.Contains(encoded, `"initialValue":"dependency://dependency-1"`) {
+		t.Fatalf("state string was not sanitized: %s", encoded)
+	}
+	if !reflect.DeepEqual(view.ObservedCapabilities, []string{"state.read", "state.write"}) {
+		t.Fatalf("unexpected state capabilities: %#v", view.ObservedCapabilities)
+	}
+	if !reflect.DeepEqual(view.ReferencedVariables, []string{"stat_data"}) {
+		t.Fatalf("unexpected variables: %#v", view.ReferencedVariables)
 	}
 }
 

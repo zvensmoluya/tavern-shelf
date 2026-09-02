@@ -1,6 +1,7 @@
 package adaptation
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -10,8 +11,9 @@ const validArtifactJSON = `{
   "sourceSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "compiler":{"id":"tavern-shelf-ai","version":"1","model":"test-model"},
   "status":"FULL",
-  "requiredCapabilities":["ui.native","chat.setDraft","state.write"],
+  "requiredCapabilities":["ui.native","chat.setDraft","state.write","state.ingest"],
   "state":[{"key":"visits","type":"NUMBER","initialValue":0}],
+  "messageStateRules":[{"dialect":"UPDATE_VARIABLE_SET_V1","mappings":[{"sourcePath":"game.visits","target":"visits"}]}],
   "views":[{
     "id":"opening-form",
     "title":"预约",
@@ -40,6 +42,80 @@ func TestDecodeAndValidateArtifact(t *testing.T) {
 	}
 	if issues := ValidateArtifact(artifact, artifact.SourceSHA256); len(issues) != 0 {
 		t.Fatalf("valid artifact issues: %#v", issues)
+	}
+}
+
+func TestValidateArtifactRejectsUnsafeMessageStateMappings(t *testing.T) {
+	t.Parallel()
+	artifact, _, err := DecodeArtifact(strings.NewReader(validArtifactJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact.MessageStateRules[0].Mappings = append(
+		artifact.MessageStateRules[0].Mappings,
+		MessageStateMapping{SourcePath: "game.visits", Target: "missing"},
+	)
+	issues := ValidateArtifact(artifact, artifact.SourceSHA256)
+	want := map[string]bool{
+		"DUPLICATE_STATE_PATH": true,
+		"UNKNOWN_STATE":        true,
+	}
+	for _, issue := range issues {
+		delete(want, issue.Code)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing issue codes %#v; got %#v", want, issues)
+	}
+}
+
+func TestValidateArtifactRejectsNonFiniteNumberState(t *testing.T) {
+	t.Parallel()
+	artifact, _, err := DecodeArtifact(strings.NewReader(validArtifactJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact.State[0].InitialValue = json.RawMessage(`1e9999`)
+	issues := ValidateArtifact(artifact, artifact.SourceSHA256)
+	for _, issue := range issues {
+		if issue.Path == "state[0].initialValue" && issue.Code == "STATE_TYPE_MISMATCH" {
+			return
+		}
+	}
+	t.Fatalf("non-finite number was accepted: %#v", issues)
+}
+
+func TestValidateArtifactForProgramViewRejectsInventedProtocolSurface(t *testing.T) {
+	t.Parallel()
+	artifact, _, err := DecodeArtifact(strings.NewReader(validArtifactJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := ProgramView{
+		SchemaVersion: ProgramViewSchemaVersion,
+		SourceSHA256:  artifact.SourceSHA256,
+		ProgramBlocks: []ProgramBlock{{
+			Enabled: true, TriggerPattern: "<FORM_PLACEHOLDER/>",
+		}},
+		StateProtocolHints: []StateProtocolHint{{
+			Dialect: "UPDATE_VARIABLE_SET_V1",
+			Values: []StateValueHint{{
+				Path: "game.visits", Type: "NUMBER", InitialValue: json.RawMessage(`0`),
+			}},
+		}},
+	}
+	if issues := ValidateArtifactForProgramView(artifact, view); len(issues) != 0 {
+		t.Fatalf("valid source-bound artifact rejected: %#v", issues)
+	}
+
+	artifact.Views[0].Trigger.Value = "<INVENTED/>"
+	artifact.MessageStateRules[0].Mappings[0].SourcePath = "invented.path"
+	issues := ValidateArtifactForProgramView(artifact, view)
+	want := map[string]bool{"UNOBSERVED_TRIGGER": true, "UNOBSERVED_STATE_PATH": true}
+	for _, issue := range issues {
+		delete(want, issue.Code)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing issue codes %#v; got %#v", want, issues)
 	}
 }
 

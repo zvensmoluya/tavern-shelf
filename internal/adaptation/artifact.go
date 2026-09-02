@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -17,14 +18,15 @@ const (
 )
 
 type Artifact struct {
-	SchemaVersion        int               `json:"schemaVersion"`
-	SourceSHA256         string            `json:"sourceSha256"`
-	Compiler             ArtifactCompiler  `json:"compiler"`
-	Status               string            `json:"status"`
-	RequiredCapabilities []string          `json:"requiredCapabilities"`
-	State                []StateDefinition `json:"state"`
-	Views                []View            `json:"views"`
-	Report               ArtifactReport    `json:"report"`
+	SchemaVersion        int                `json:"schemaVersion"`
+	SourceSHA256         string             `json:"sourceSha256"`
+	Compiler             ArtifactCompiler   `json:"compiler"`
+	Status               string             `json:"status"`
+	RequiredCapabilities []string           `json:"requiredCapabilities"`
+	State                []StateDefinition  `json:"state"`
+	MessageStateRules    []MessageStateRule `json:"messageStateRules"`
+	Views                []View             `json:"views"`
+	Report               ArtifactReport     `json:"report"`
 }
 
 type ArtifactCompiler struct {
@@ -37,6 +39,16 @@ type StateDefinition struct {
 	Key          string          `json:"key"`
 	Type         string          `json:"type"`
 	InitialValue json.RawMessage `json:"initialValue"`
+}
+
+type MessageStateRule struct {
+	Dialect  string                `json:"dialect"`
+	Mappings []MessageStateMapping `json:"mappings"`
+}
+
+type MessageStateMapping struct {
+	SourcePath string `json:"sourcePath"`
+	Target     string `json:"target"`
 }
 
 type View struct {
@@ -165,6 +177,41 @@ func ValidateArtifact(artifact Artifact, expectedSourceSHA256 string) []Validati
 			issue(path+".initialValue", "STATE_TYPE_MISMATCH", "初始值与状态类型不匹配")
 		}
 	}
+	if len(artifact.MessageStateRules) > maxMessageStateRules {
+		issue("messageStateRules", "TOO_MANY_STATE_RULES", "消息状态规则数量超过限制")
+	}
+	for ruleIndex, rule := range artifact.MessageStateRules {
+		path := fmt.Sprintf("messageStateRules[%d]", ruleIndex)
+		if rule.Dialect != "UPDATE_VARIABLE_SET_V1" {
+			issue(path+".dialect", "UNKNOWN_ENUM", "未知的消息状态方言")
+		}
+		if len(rule.Mappings) == 0 {
+			issue(path+".mappings", "EMPTY_MAPPINGS", "消息状态规则必须包含映射")
+		}
+		if len(rule.Mappings) > maxStateMappings {
+			issue(path+".mappings", "TOO_MANY_STATE_MAPPINGS", "消息状态映射数量超过限制")
+		}
+		sourcePaths := map[string]bool{}
+		targets := map[string]bool{}
+		for mappingIndex, mapping := range rule.Mappings {
+			mappingPath := fmt.Sprintf("%s.mappings[%d]", path, mappingIndex)
+			validateText(mappingPath+".sourcePath", mapping.SourcePath, maxStatePathChars, &issues)
+			if !validStatePath(mapping.SourcePath) {
+				issue(mappingPath+".sourcePath", "INVALID_STATE_PATH", "状态来源路径格式无效")
+			}
+			if sourcePaths[mapping.SourcePath] {
+				issue(mappingPath+".sourcePath", "DUPLICATE_STATE_PATH", "同一规则中的状态来源路径重复")
+			}
+			sourcePaths[mapping.SourcePath] = true
+			if stateKeys[mapping.Target] == "" {
+				issue(mappingPath+".target", "UNKNOWN_STATE", "消息状态映射引用了未知状态")
+			}
+			if targets[mapping.Target] {
+				issue(mappingPath+".target", "DUPLICATE_STATE_TARGET", "同一规则中的目标状态重复")
+			}
+			targets[mapping.Target] = true
+		}
+	}
 
 	viewIDs := map[string]bool{}
 	totalNodes := 0
@@ -208,6 +255,7 @@ func ValidateArtifact(artifact Artifact, expectedSourceSHA256 string) []Validati
 			nodeIDs[node.ID] = true
 			validateText(nodePath+".title", node.Title, maxTextChars, &issues)
 			validateText(nodePath+".text", node.Text, maxTextChars, &issues)
+			validateTemplate(nodePath+".text", node.Text, map[string]bool{}, stateKeys, &issues)
 			if !oneOf(node.Type, "SECTION", "TEXT", "STATUS", "FORM") {
 				issue(nodePath+".type", "UNKNOWN_ENUM", "未知的 UI 节点类型")
 			}
@@ -303,6 +351,9 @@ func ValidateArtifact(artifact Artifact, expectedSourceSHA256 string) []Validati
 	}
 
 	inferred := map[string]bool{}
+	if len(artifact.MessageStateRules) > 0 {
+		inferred["state.ingest"] = true
+	}
 	for _, view := range artifact.Views {
 		inferred["ui.native"] = true
 		for _, action := range view.SubmitActions {
@@ -316,7 +367,7 @@ func ValidateArtifact(artifact Artifact, expectedSourceSHA256 string) []Validati
 	declared := map[string]bool{}
 	for index, capability := range artifact.RequiredCapabilities {
 		declared[capability] = true
-		if !oneOf(capability, "ui.native", "chat.setDraft", "state.write") {
+		if !oneOf(capability, "ui.native", "chat.setDraft", "state.write", "state.ingest") {
 			issue(fmt.Sprintf("requiredCapabilities[%d]", index), "UNSUPPORTED_CAPABILITY", "Player 不支持该 capability")
 		}
 	}
@@ -325,7 +376,95 @@ func ValidateArtifact(artifact Artifact, expectedSourceSHA256 string) []Validati
 			issue("requiredCapabilities", "MISSING_CAPABILITY", "产物未声明实际使用的 capability: "+capability)
 		}
 	}
+	for capability := range declared {
+		if oneOf(capability, "ui.native", "chat.setDraft", "state.write", "state.ingest") && !inferred[capability] {
+			issue("requiredCapabilities", "UNUSED_CAPABILITY", "产物声明了未使用的 capability: "+capability)
+		}
+	}
 	return deduplicateIssues(issues)
+}
+
+// ValidateArtifactForProgramView binds model-proposed behavior back to the
+// deterministic observations that were actually extracted from the source.
+// This keeps the model in an interpretation role rather than letting it invent
+// message protocols or marker entry points.
+func ValidateArtifactForProgramView(artifact Artifact, view ProgramView) []ValidationIssue {
+	issues := append([]ValidationIssue(nil), ValidateArtifact(artifact, view.SourceSHA256)...)
+	issue := func(path, code, message string) {
+		issues = append(issues, ValidationIssue{Path: path, Code: code, Message: message})
+	}
+	observedTriggers := map[string]bool{}
+	for _, block := range view.ProgramBlocks {
+		if block.Enabled && block.TriggerPattern != "" {
+			observedTriggers[block.TriggerPattern] = true
+		}
+	}
+	for index, candidate := range artifact.Views {
+		if candidate.Trigger.Type != "ALWAYS" && !observedTriggers[candidate.Trigger.Value] {
+			issue(fmt.Sprintf("views[%d].trigger.value", index), "UNOBSERVED_TRIGGER", "消息视图 trigger 未在 Program View 中出现")
+		}
+	}
+
+	observedDialects := map[string]bool{}
+	observedValues := map[string]StateValueHint{}
+	for _, hint := range view.StateProtocolHints {
+		observedDialects[hint.Dialect] = true
+		for _, value := range hint.Values {
+			observedValues[hint.Dialect+"\x00"+value.Path] = value
+		}
+	}
+	definitions := map[string]StateDefinition{}
+	for _, definition := range artifact.State {
+		definitions[definition.Key] = definition
+	}
+	for ruleIndex, rule := range artifact.MessageStateRules {
+		if !observedDialects[rule.Dialect] {
+			issue(fmt.Sprintf("messageStateRules[%d].dialect", ruleIndex), "UNOBSERVED_STATE_DIALECT", "消息状态方言未在 Program View 中出现")
+		}
+		for mappingIndex, mapping := range rule.Mappings {
+			path := fmt.Sprintf("messageStateRules[%d].mappings[%d]", ruleIndex, mappingIndex)
+			hint, ok := observedValues[rule.Dialect+"\x00"+mapping.SourcePath]
+			if !ok {
+				issue(path+".sourcePath", "UNOBSERVED_STATE_PATH", "消息状态路径未在 Program View 中出现")
+				continue
+			}
+			definition, ok := definitions[mapping.Target]
+			if !ok {
+				continue
+			}
+			if definition.Type != hint.Type {
+				issue(path+".target", "STATE_HINT_TYPE_MISMATCH", "目标状态类型与 Program View 提示不一致")
+			} else if !sameInitialValue(definition.Type, definition.InitialValue, hint.InitialValue) {
+				issue(path+".target", "STATE_HINT_INITIAL_MISMATCH", "目标状态初始值与 Program View 提示不一致")
+			}
+		}
+	}
+	return deduplicateIssues(issues)
+}
+
+func sameInitialValue(kind string, left, right json.RawMessage) bool {
+	switch kind {
+	case "STRING":
+		var a, b string
+		return json.Unmarshal(left, &a) == nil && json.Unmarshal(right, &b) == nil && a == b
+	case "BOOLEAN":
+		var a, b bool
+		return json.Unmarshal(left, &a) == nil && json.Unmarshal(right, &b) == nil && a == b
+	case "NUMBER":
+		var a, b json.Number
+		leftDecoder := json.NewDecoder(bytes.NewReader(left))
+		leftDecoder.UseNumber()
+		rightDecoder := json.NewDecoder(bytes.NewReader(right))
+		rightDecoder.UseNumber()
+		if leftDecoder.Decode(&a) != nil || rightDecoder.Decode(&b) != nil {
+			return false
+		}
+		leftNumber, leftErr := a.Float64()
+		rightNumber, rightErr := b.Float64()
+		return leftErr == nil && rightErr == nil && leftNumber == rightNumber
+	default:
+		return false
+	}
 }
 
 func validInitialValue(kind string, raw json.RawMessage) bool {
@@ -335,13 +474,21 @@ func validInitialValue(kind string, raw json.RawMessage) bool {
 	if len(raw) == 0 || decoder.Decode(&value) != nil {
 		return false
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return false
+	}
 	switch kind {
 	case "STRING":
 		_, ok := value.(string)
 		return ok
 	case "NUMBER":
-		_, ok := value.(json.Number)
-		return ok
+		number, ok := value.(json.Number)
+		if !ok {
+			return false
+		}
+		parsed, err := number.Float64()
+		return err == nil && !math.IsInf(parsed, 0) && !math.IsNaN(parsed)
 	case "BOOLEAN":
 		_, ok := value.(bool)
 		return ok
@@ -408,16 +555,19 @@ var (
 )
 
 const (
-	maxViews         = 16
-	maxStateValues   = 128
-	maxNodes         = 256
-	maxNodeDepth     = 8
-	maxFieldsPerForm = 32
-	maxOptions       = 64
-	maxActions       = 16
-	maxIDChars       = 80
-	maxTextChars     = 4_096
-	maxInputChars    = 8_192
-	maxTriggerChars  = 256
-	maxTemplateChars = 16_384
+	maxViews             = 16
+	maxStateValues       = 128
+	maxMessageStateRules = 4
+	maxStateMappings     = 128
+	maxStatePathChars    = 256
+	maxNodes             = 256
+	maxNodeDepth         = 8
+	maxFieldsPerForm     = 32
+	maxOptions           = 64
+	maxActions           = 16
+	maxIDChars           = 80
+	maxTextChars         = 4_096
+	maxInputChars        = 8_192
+	maxTriggerChars      = 256
+	maxTemplateChars     = 16_384
 )

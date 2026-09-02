@@ -15,7 +15,9 @@ import (
 
 const (
 	CompilerID      = "tavern-shelf-ai"
-	CompilerVersion = "1"
+	CompilerVersion = "2"
+	maxAttempts     = 3
+	maxRepairIssues = 20
 )
 
 type CompilerConfig struct {
@@ -86,7 +88,7 @@ func (c *Compiler) Compile(ctx context.Context, view ProgramView) (CompileResult
 	var totalInput, totalOutput int64
 	var previous string
 	var lastErr error
-	for attempt := 1; attempt <= 2; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		currentPrompt := prompt
 		if attempt > 1 {
 			currentPrompt = repairPrompt(prompt, previous, lastErr)
@@ -109,8 +111,8 @@ func (c *Compiler) Compile(ctx context.Context, view ProgramView) (CompileResult
 			continue
 		}
 		artifact.Compiler = ArtifactCompiler{ID: CompilerID, Version: CompilerVersion, Model: &c.model}
-		if issues := ValidateArtifact(artifact, view.SourceSHA256); len(issues) != 0 {
-			lastErr = fmt.Errorf("%s at %s", issues[0].Code, issues[0].Path)
+		if issues := ValidateArtifactForProgramView(artifact, view); len(issues) != 0 {
+			lastErr = validationProblems(issues)
 			continue
 		}
 		normalizeArtifact(&artifact)
@@ -125,6 +127,18 @@ func (c *Compiler) Compile(ctx context.Context, view ProgramView) (CompileResult
 		}, nil
 	}
 	return CompileResult{}, fmt.Errorf("model did not produce a valid adaptation artifact after repair: %w", lastErr)
+}
+
+func validationProblems(issues []ValidationIssue) error {
+	limit := min(len(issues), maxRepairIssues)
+	problems := make([]string, 0, limit)
+	for _, issue := range issues[:limit] {
+		problems = append(problems, fmt.Sprintf("%s at %s", issue.Code, issue.Path))
+	}
+	if len(issues) > limit {
+		problems = append(problems, fmt.Sprintf("and %d more", len(issues)-limit))
+	}
+	return errors.New(strings.Join(problems, "; "))
 }
 
 type responsesRequest struct {
@@ -268,6 +282,14 @@ func normalizeArtifact(artifact *Artifact) {
 	if artifact.State == nil {
 		artifact.State = []StateDefinition{}
 	}
+	if artifact.MessageStateRules == nil {
+		artifact.MessageStateRules = []MessageStateRule{}
+	}
+	for index := range artifact.MessageStateRules {
+		if artifact.MessageStateRules[index].Mappings == nil {
+			artifact.MessageStateRules[index].Mappings = []MessageStateMapping{}
+		}
+	}
 	if artifact.Views == nil {
 		artifact.Views = []View{}
 	}
@@ -328,10 +350,11 @@ func compilePrompt(programView string) string {
 {
   "schemaVersion": 1,
   "sourceSha256": "与 Program View 完全相同",
-  "compiler": {"id":"tavern-shelf-ai","version":"1","model":null},
+  "compiler": {"id":"tavern-shelf-ai","version":"2","model":null},
   "status": "FULL 或 PARTIAL",
-  "requiredCapabilities": ["ui.native", "chat.setDraft", "state.write" 中实际使用者],
+  "requiredCapabilities": ["ui.native", "chat.setDraft", "state.write", "state.ingest" 中实际使用者],
   "state": [{"key":"lowercase-id","type":"STRING|NUMBER|BOOLEAN","initialValue":"与 type 匹配的 JSON primitive"}],
+  "messageStateRules": [{"dialect":"UPDATE_VARIABLE_SET_V1","mappings":[{"sourcePath":"原始点分路径","target":"已声明 state key"}]}],
   "views": [{
     "id":"lowercase-id", "title":"", "placement":"MESSAGE_REPLACEMENT|MESSAGE_ATTACHMENT|CONVERSATION_HEADER",
     "trigger":{"type":"MESSAGE_EXACT|MESSAGE_CONTAINS|ALWAYS","value":"ALWAYS 时必须为空"},
@@ -344,6 +367,8 @@ func compilePrompt(programView string) string {
 
 FORM fields 使用 {"id":"lowercase-id","type":"TEXT|MULTILINE_TEXT|NUMBER|SINGLE_SELECT|MULTI_SELECT|TOGGLE","label":"","placeholder":"","required":false,"options":[{"value":"","label":""}],"initialValue":""}。
 template 只允许 {{form.field-id}}、{{state.state-key}}、{{user}}、{{char}}。CHAT_SET_DRAFT 必须有 template 且没有 target/value。状态动作 target 必须引用已声明 state。所有 id 使用小写英数字和 ._- 分隔。
+
+如果 Program View 包含 stateProtocolHints，请为 UI 实际读取的每个 values.path 声明 state，并生成 UPDATE_VARIABLE_SET_V1 messageStateRules 映射；初始值和类型沿用 hint，requiredCapabilities 声明 state.ingest。此方言只表示模型回复中 <UpdateVariable> 内的 _.set('点分路径', oldScalar, newScalar) 白名单更新，不代表执行 JavaScript。如果没有对应 hint，messageStateRules 必须为空。只声明实际使用的 capabilities，不得多声明。带 triggerPattern 的原始 markup 必须使用该 marker；triggerMatchMode 非空时必须原样作为 trigger.type，否则默认 MESSAGE_CONTAINS，不能使用 ALWAYS。原 markup 如果把数值状态展示为带 min/max 的进度条，使用 STATUS 节点表达，不要降级为普通 TEXT。hint 已提供的 initialValue 是可用的安全初始值，不得声称缺少初始化。
 
 Program View：
 ` + programView

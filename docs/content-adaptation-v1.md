@@ -5,10 +5,10 @@ Shelf 可把依赖酒馆助手、HTML 或 JavaScript 的社区角色卡转换为
 ## 数据流
 
 1. Shelf 从受管理原件的 PNG 元数据或 JSON 中提取 `ProgramView`。
-2. `ProgramView` 只包含活跃标记、脚本结构、依赖句柄和行为线索。角色描述、开场白、世界书正文等叙事内容只留下长度与 SHA-256。
+2. `ProgramView` 只包含活跃标记、脚本结构、依赖句柄和行为线索。角色描述、开场白、世界书正文等叙事内容只留下长度与 SHA-256；受支持的 `[InitVar]` / `<UpdateVariable>` 世界书仅提取路径、primitive 类型和初始值，说明文字仍被丢弃。
 3. 提取器移除凭据、本机用户路径、内联 data URI，并把远程 URL 替换为去凭据和查询参数的依赖句柄。
 4. 模型只接收这个脱敏视图，并提议 `AdaptationArtifact`。
-5. Shelf 使用与 Player 相同的 schema、类型、引用、尺寸和 capability 白名单做确定性校验。模型输出不是信任边界。
+5. Shelf 使用与 Player 相同的 schema、类型、引用、尺寸和 capability 白名单做确定性校验，并把消息方言路径、初始值和 marker trigger 重新绑定到本次 `ProgramView` 的观察结果。模型输出不是信任边界。
 6. 通过校验的产物作为可重建派生文件保存；原件字节不会变化。
 
 当前 Player v1 只接受：
@@ -16,9 +16,10 @@ Shelf 可把依赖酒馆助手、HTML 或 JavaScript 的社区角色卡转换为
 - 原生 `SECTION`、`TEXT`、`STATUS`、`FORM` 组件；
 - 文本、多行文本、数字、单选、多选和开关字段；
 - 写入聊天草稿，以及有类型的会话状态 set/increment/toggle；
+- 从 assistant 回复中的 `UPDATE_VARIABLE_SET_V1` 方言摄入 artifact 逐路径白名单声明的字符串、有限数字和布尔值；
 - `MESSAGE_REPLACEMENT`、`MESSAGE_ATTACHMENT` 与 `CONVERSATION_HEADER` 三种放置方式。
 
-网络访问、任意脚本、WebView、DOM、文件 URI 和未声明变量不会进入产物。无法映射的行为必须报告为 `PARTIAL`。
+`UPDATE_VARIABLE_SET_V1` 只复用 `<UpdateVariable>` 内 `_.set('path', oldScalar, newScalar)` 的文本外形，不执行 JavaScript；函数、表达式、对象、数组、未知路径和块外文本均无效。网络访问、任意脚本、WebView、DOM、文件 URI 和未声明变量不会进入产物。无法映射的行为必须报告为 `PARTIAL`。
 
 ## 派生文件
 

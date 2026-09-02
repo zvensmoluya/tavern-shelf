@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zvensmoluya/tavern-shelf/internal/card"
 )
@@ -22,6 +25,7 @@ type ProgramView struct {
 	SourceSHA256         string              `json:"sourceSha256"`
 	ProgramBlocks        []ProgramBlock      `json:"programBlocks"`
 	WorldBookHandles     []WorldBookHandle   `json:"worldBookHandles"`
+	StateProtocolHints   []StateProtocolHint `json:"stateProtocolHints"`
 	Dependencies         []ProgramDependency `json:"dependencies"`
 	ObservedCapabilities []string            `json:"observedCapabilities"`
 	ReferencedVariables  []string            `json:"referencedVariables"`
@@ -29,17 +33,33 @@ type ProgramView struct {
 	Redactions           []ProgramRedaction  `json:"redactions"`
 }
 
+// StateProtocolHint is a narrow, non-narrative description of a variable update
+// protocol found in a card. It deliberately carries only paths and primitive
+// initial values; world-book instructions and value descriptions stay omitted.
+type StateProtocolHint struct {
+	Dialect      string           `json:"dialect"`
+	VariableName string           `json:"variableName"`
+	Values       []StateValueHint `json:"values"`
+}
+
+type StateValueHint struct {
+	Path         string          `json:"path"`
+	Type         string          `json:"type"`
+	InitialValue json.RawMessage `json:"initialValue"`
+}
+
 type ProgramBlock struct {
-	ID             string `json:"id"`
-	Kind           string `json:"kind"`
-	SourcePath     string `json:"sourcePath"`
-	Name           string `json:"name"`
-	Language       string `json:"language"`
-	Content        string `json:"content"`
-	OriginalSHA256 string `json:"originalSha256"`
-	Enabled        bool   `json:"enabled"`
-	TriggerPattern string `json:"triggerPattern,omitempty"`
-	Placements     []int  `json:"placements"`
+	ID               string `json:"id"`
+	Kind             string `json:"kind"`
+	SourcePath       string `json:"sourcePath"`
+	Name             string `json:"name"`
+	Language         string `json:"language"`
+	Content          string `json:"content"`
+	OriginalSHA256   string `json:"originalSha256"`
+	Enabled          bool   `json:"enabled"`
+	TriggerPattern   string `json:"triggerPattern,omitempty"`
+	TriggerMatchMode string `json:"triggerMatchMode,omitempty"`
+	Placements       []int  `json:"placements"`
 }
 
 type WorldBookHandle struct {
@@ -76,6 +96,7 @@ type programCardData struct {
 	Personality             string                     `json:"personality"`
 	Scenario                string                     `json:"scenario"`
 	FirstMessage            string                     `json:"first_mes"`
+	AlternateGreetings      []string                   `json:"alternate_greetings"`
 	MessageExample          string                     `json:"mes_example"`
 	SystemPrompt            string                     `json:"system_prompt"`
 	PostHistoryInstructions string                     `json:"post_history_instructions"`
@@ -132,16 +153,17 @@ func ExtractProgramView(path, sourceSHA256 string) (ProgramView, error) {
 			continue
 		}
 		blocks = append(blocks, ProgramBlock{
-			ID:             fmt.Sprintf("markup-%d", len(blocks)+1),
-			Kind:           "ACTIVE_MARKUP",
-			SourcePath:     fmt.Sprintf("data.extensions.regex_scripts[%d].replaceString", index),
-			Name:           sanitizer.sanitize(firstNonEmpty(item.ScriptName, item.Name)),
-			Language:       "html",
-			Content:        sanitizer.sanitize(item.ReplaceString),
-			OriginalSHA256: textHash(item.ReplaceString),
-			Enabled:        !item.Disabled,
-			TriggerPattern: sanitizer.sanitize(item.FindRegex),
-			Placements:     append([]int(nil), item.Placement...),
+			ID:               fmt.Sprintf("markup-%d", len(blocks)+1),
+			Kind:             "ACTIVE_MARKUP",
+			SourcePath:       fmt.Sprintf("data.extensions.regex_scripts[%d].replaceString", index),
+			Name:             sanitizer.sanitize(firstNonEmpty(item.ScriptName, item.Name)),
+			Language:         "html",
+			Content:          sanitizer.sanitize(item.ReplaceString),
+			OriginalSHA256:   textHash(item.ReplaceString),
+			Enabled:          !item.Disabled,
+			TriggerPattern:   sanitizer.sanitize(item.FindRegex),
+			TriggerMatchMode: observedTriggerMatchMode(item.FindRegex, append([]string{data.FirstMessage}, data.AlternateGreetings...)),
+			Placements:       append([]int(nil), item.Placement...),
 		})
 	}
 	for _, item := range collectScripts(data.Extensions) {
@@ -158,19 +180,29 @@ func ExtractProgramView(path, sourceSHA256 string) (ProgramView, error) {
 		})
 	}
 
+	protocolHints := stateProtocolHints(data.CharacterBook, sanitizer)
 	programText := strings.Builder{}
 	for _, block := range blocks {
 		programText.WriteString(block.Content)
 		programText.WriteByte('\n')
+	}
+	observedCapabilities := detectCapabilities(programText.String())
+	referencedVariables := detectVariables(programText.String())
+	if len(protocolHints) > 0 {
+		observedCapabilities = sortedUnion(observedCapabilities, "state.read", "state.write")
+		for _, hint := range protocolHints {
+			referencedVariables = sortedUnion(referencedVariables, hint.VariableName)
+		}
 	}
 	return ProgramView{
 		SchemaVersion:        ProgramViewSchemaVersion,
 		SourceSHA256:         sourceSHA256,
 		ProgramBlocks:        blocks,
 		WorldBookHandles:     worldBookHandles(data.CharacterBook, sanitizer),
+		StateProtocolHints:   protocolHints,
 		Dependencies:         sanitizer.dependencies,
-		ObservedCapabilities: detectCapabilities(programText.String()),
-		ReferencedVariables:  detectVariables(programText.String()),
+		ObservedCapabilities: observedCapabilities,
+		ReferencedVariables:  referencedVariables,
 		OmittedContent: omittedContent([]namedContent{
 			{"description", data.Description},
 			{"personality", data.Personality},
@@ -183,6 +215,167 @@ func ExtractProgramView(path, sourceSHA256 string) (ProgramView, error) {
 		}),
 		Redactions: sanitizer.redactions(),
 	}, nil
+}
+
+func observedTriggerMatchMode(pattern string, messages []string) string {
+	literal := strings.TrimSpace(pattern)
+	if literal == "" || regexp.QuoteMeta(literal) != literal {
+		return ""
+	}
+	for _, message := range messages {
+		if strings.TrimSpace(message) == literal {
+			return "MESSAGE_EXACT"
+		}
+	}
+	for _, message := range messages {
+		if strings.Contains(message, literal) {
+			return "MESSAGE_CONTAINS"
+		}
+	}
+	return ""
+}
+
+func stateProtocolHints(raw json.RawMessage, sanitizer *programSanitizer) []StateProtocolHint {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return []StateProtocolHint{}
+	}
+	var book struct {
+		Entries []struct {
+			Name    string `json:"name"`
+			Comment string `json:"comment"`
+			Content string `json:"content"`
+			Enabled *bool  `json:"enabled"`
+			Disable bool   `json:"disable"`
+		} `json:"entries"`
+	}
+	if json.Unmarshal(raw, &book) != nil {
+		return []StateProtocolHint{}
+	}
+
+	variableName := ""
+	paths := map[string]bool{}
+	hasDialect := false
+	for _, entry := range book.Entries {
+		if (entry.Enabled != nil && !*entry.Enabled) || (entry.Enabled == nil && entry.Disable) {
+			continue
+		}
+		if !updateVariableBlock.MatchString(entry.Content) || !updateSetCall.MatchString(entry.Content) {
+			continue
+		}
+		hasDialect = true
+		if match := messageVariableMacro.FindStringSubmatch(entry.Content); len(match) > 1 {
+			variableName = sanitizer.sanitize(strings.TrimSpace(match[1]))
+		}
+		for _, match := range updateSetPath.FindAllStringSubmatch(entry.Content, -1) {
+			if len(match) > 1 && validStatePath(match[1]) {
+				paths[match[1]] = true
+			}
+		}
+	}
+	if !hasDialect {
+		return []StateProtocolHint{}
+	}
+
+	valuesByPath := map[string]StateValueHint{}
+	for _, entry := range book.Entries {
+		name := firstNonEmpty(entry.Comment, entry.Name)
+		if !strings.Contains(strings.ToLower(name), "initvar") {
+			continue
+		}
+		decoder := json.NewDecoder(strings.NewReader(entry.Content))
+		decoder.UseNumber()
+		var value any
+		if decoder.Decode(&value) != nil {
+			continue
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); err != io.EOF {
+			continue
+		}
+		collectStateValueHints(value, nil, sanitizer, valuesByPath)
+	}
+	for path := range paths {
+		if _, ok := valuesByPath[path]; !ok {
+			valuesByPath[path] = StateValueHint{Path: path, Type: "STRING", InitialValue: json.RawMessage(`""`)}
+		}
+	}
+	if len(valuesByPath) == 0 {
+		return []StateProtocolHint{}
+	}
+	valuePaths := make([]string, 0, len(valuesByPath))
+	for path := range valuesByPath {
+		valuePaths = append(valuePaths, path)
+	}
+	sort.Strings(valuePaths)
+	values := make([]StateValueHint, 0, len(valuePaths))
+	for _, path := range valuePaths {
+		values = append(values, valuesByPath[path])
+	}
+	return []StateProtocolHint{{Dialect: "UPDATE_VARIABLE_SET_V1", VariableName: variableName, Values: values}}
+}
+
+func collectStateValueHints(value any, path []string, sanitizer *programSanitizer, target map[string]StateValueHint) {
+	object, ok := value.(map[string]any)
+	if ok {
+		keys := make([]string, 0, len(object))
+		for key := range object {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			collectStateValueHints(object[key], append(append([]string(nil), path...), key), sanitizer, target)
+		}
+		return
+	}
+	if items, ok := value.([]any); ok {
+		if len(items) == 0 {
+			return
+		}
+		value = items[0]
+	}
+	joined := strings.Join(path, ".")
+	if !validStatePath(joined) {
+		return
+	}
+	var kind string
+	switch typed := value.(type) {
+	case string:
+		value = sanitizer.sanitize(typed)
+		kind = "STRING"
+	case json.Number:
+		number, err := typed.Float64()
+		if err != nil || math.IsInf(number, 0) || math.IsNaN(number) {
+			return
+		}
+		kind = "NUMBER"
+	case bool:
+		kind = "BOOLEAN"
+	default:
+		return
+	}
+	raw, err := json.Marshal(value)
+	if err == nil {
+		target[joined] = StateValueHint{Path: joined, Type: kind, InitialValue: raw}
+	}
+}
+
+func validStatePath(value string) bool {
+	return utf8.RuneCountInString(value) <= 256 && statePathPattern.MatchString(value)
+}
+
+func sortedUnion(values []string, additions ...string) []string {
+	unique := make(map[string]bool, len(values)+len(additions))
+	for _, value := range append(append([]string(nil), values...), additions...) {
+		if strings.TrimSpace(value) != "" {
+			unique[value] = true
+		}
+	}
+	result := make([]string, 0, len(unique))
+	for value := range unique {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func collectScripts(extensions map[string]json.RawMessage) []scriptBlock {
@@ -439,17 +632,22 @@ type capabilityPatterns struct {
 }
 
 var (
-	sha256Pattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	activeMarkup     = regexp.MustCompile(`(?i)<(?:html|style|script|form|button|input|select|textarea)\b`)
-	remoteURL        = regexp.MustCompile("(?i)https?://[^\\s'\"`<>\\)]+")
-	dataURI          = regexp.MustCompile("(?i)data:[^\\s'\"`<>]+")
-	bearerSecret     = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}`)
-	secretAssignment = regexp.MustCompile("(?i)[\"']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)[\"']?\\s*[:=]\\s*[\"']?[^'\"`\\s,;}]{6,}")
-	windowsUserPath  = regexp.MustCompile("(?i)\\b[A-Z]:\\\\+(?:Users|Documents and Settings)\\\\+[^\\s'\"`<>]+")
-	unixUserPath     = regexp.MustCompile("/(?:home|Users)/[^\\s'\"`<>]+")
-	functionVariable = regexp.MustCompile(`(?i)\b(getvar|setvar|addvar|incvar|decvar|getglobalvar|setglobalvar|get_message_variable|set_message_variable)\s*\(\s*['"]([^'"]+)['"]`)
-	macroVariable    = regexp.MustCompile(`(?i)\{\{\s*(?:getvar|getglobalvar|get_message_variable)::([^}]+)}}`)
-	capabilities     = []capabilityPatterns{
+	sha256Pattern        = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	activeMarkup         = regexp.MustCompile(`(?i)<(?:html|style|script|form|button|input|select|textarea)\b`)
+	remoteURL            = regexp.MustCompile("(?i)https?://[^\\s'\"`<>\\)]+")
+	dataURI              = regexp.MustCompile("(?i)data:[^\\s'\"`<>]+")
+	bearerSecret         = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}`)
+	secretAssignment     = regexp.MustCompile("(?i)[\"']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)[\"']?\\s*[:=]\\s*[\"']?[^'\"`\\s,;}]{6,}")
+	windowsUserPath      = regexp.MustCompile("(?i)\\b[A-Z]:\\\\+(?:Users|Documents and Settings)\\\\+[^\\s'\"`<>]+")
+	unixUserPath         = regexp.MustCompile("/(?:home|Users)/[^\\s'\"`<>]+")
+	functionVariable     = regexp.MustCompile(`(?i)\b(getvar|setvar|addvar|incvar|decvar|getglobalvar|setglobalvar|get_message_variable|set_message_variable)\s*\(\s*['"]([^'"]+)['"]`)
+	macroVariable        = regexp.MustCompile(`(?i)\{\{\s*(?:getvar|getglobalvar|get_message_variable)::([^}]+)}}`)
+	updateVariableBlock  = regexp.MustCompile(`(?s)<UpdateVariable>.*?</UpdateVariable>`)
+	updateSetCall        = regexp.MustCompile(`(?m)^\s*_\.set\s*\(`)
+	updateSetPath        = regexp.MustCompile(`(?m)^\s*_\.set\s*\(\s*['"]([^'"]+)['"]\s*,`)
+	messageVariableMacro = regexp.MustCompile(`(?i)\{\{\s*get_message_variable::([^},]+)`)
+	statePathPattern     = regexp.MustCompile(`^[^.\s'"(){}\[\]$]+(?:\.[^.\s'"(){}\[\]$]+){0,15}$`)
+	capabilities         = []capabilityPatterns{
 		{"chat.read", []*regexp.Regexp{regexp.MustCompile(`\bgetChatMessages\b`), regexp.MustCompile(`\bgetCurrentMessageId\b`)}},
 		{"chat.write", []*regexp.Regexp{regexp.MustCompile(`\bsetChatMessage\b`), regexp.MustCompile(`#send_textarea`), regexp.MustCompile(`\bcreateChatMessages\b`)}},
 		{"event.subscribe", []*regexp.Regexp{regexp.MustCompile(`\beventOn\b`), regexp.MustCompile(`addEventListener\s*\(`)}},

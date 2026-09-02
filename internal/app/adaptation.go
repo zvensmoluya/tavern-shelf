@@ -86,15 +86,12 @@ func (a *App) InstallAdaptation(ctx context.Context, characterID string, source 
 	if err != nil {
 		return library.Adaptation{}, err
 	}
-	if issues := adaptation.ValidateArtifact(artifact, character.SourceHash); len(issues) != 0 {
-		return library.Adaptation{}, fmt.Errorf("adaptation artifact failed validation: %s at %s", issues[0].Code, issues[0].Path)
-	}
-	record, err := a.Store.GetAdaptation(ctx, character.ID)
-	if errors.Is(err, store.ErrNotFound) || record.SourceHash != character.SourceHash {
-		_, record, err = a.BuildProgramView(ctx, character.ID)
-	}
+	view, record, err := a.BuildProgramView(ctx, character.ID)
 	if err != nil {
 		return library.Adaptation{}, err
+	}
+	if issues := adaptation.ValidateArtifactForProgramView(artifact, view); len(issues) != 0 {
+		return library.Adaptation{}, fmt.Errorf("adaptation artifact failed validation: %s at %s", issues[0].Code, issues[0].Path)
 	}
 	path := filepath.Join(filepath.Dir(sourcePath), "derived", artifactFilename)
 	if !isWithin(a.Paths.Library, path) {
