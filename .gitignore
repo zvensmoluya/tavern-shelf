@@ -10,9 +10,13 @@
 /build/installer/
 /build/release/
 /build/tools/
+/build/*.png
 *.exe
 /frontend/node_modules/
 /frontend/.vite/
+
+# Local brand explorations; canonical assets live under /brand/.
+/design/logo-concepts/
 
 # Tools and editors
 .DS_Store

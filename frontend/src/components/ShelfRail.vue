@@ -4,7 +4,7 @@ import type { LibrarySection } from "@/types";
 
 defineProps<{ toolsOpen: boolean; activeSection: LibrarySection }>();
 defineEmits<{ toggleTools: []; selectSection: [section: LibrarySection] }>();
-const brandMarkURL = `${import.meta.env.BASE_URL}brand-mark.svg`;
+const brandMarkURL = `${import.meta.env.BASE_URL}brand-mark.png`;
 </script>
 
 <template>

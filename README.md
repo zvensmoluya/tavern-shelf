@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/brand-mark.svg" width="88" height="88" alt="Tavern Shelf">
+  <img src="brand/app-icon.png" width="96" height="96" alt="Tavern Shelf">
 </p>
 
 <h1 align="center">Tavern Shelf</h1>
