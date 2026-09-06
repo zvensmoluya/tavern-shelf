@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zvensmoluya/tavern-shelf/internal/adaptation"
 	"github.com/zvensmoluya/tavern-shelf/internal/card"
 	"github.com/zvensmoluya/tavern-shelf/internal/connector"
 	"github.com/zvensmoluya/tavern-shelf/internal/importer"
@@ -303,16 +302,6 @@ func (a *App) resolveTransferSource(ctx context.Context, kind, id string) (trans
 		source := transfer.Source{
 			Kind: kind, ID: character.ID, Name: character.Name, Filename: character.SourceFilename,
 			Path: path, Size: character.SourceSize, SHA256: character.SourceHash,
-		}
-		record, adaptationPath, adaptationErr := a.AdaptationPath(ctx, id)
-		if adaptationErr == nil && record.SourceHash == character.SourceHash && record.ArtifactSize <= adaptation.MaxArtifactSize {
-			source.Adaptation = &transfer.Attachment{
-				SchemaVersion: adaptation.ArtifactSchemaVersion, Filename: artifactFilename,
-				Path: adaptationPath, Size: record.ArtifactSize, SHA256: record.ArtifactHash,
-				ContentType: "application/vnd.tavern-player.adaptation+json",
-			}
-		} else if adaptationErr != nil && !errors.Is(adaptationErr, store.ErrNotFound) {
-			return transfer.Source{}, adaptationErr
 		}
 		return source, nil
 	case library.ResourceWorldbook, library.ResourcePreset:

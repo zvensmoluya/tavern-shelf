@@ -140,6 +140,8 @@ Shelf 提供三种明确的来源模式：
 
 Content Manifest 只对确定性字段做结构化投影，不执行卡片中的 HTML/JavaScript，也不尝试解释任意脚本语义。原始角色卡始终是 source of truth；旧 Library 会在升级后从 Managed Source 自动补建 Manifest。
 
+Player 的原生适配实验由 Tavern Player 自身负责，相关架构研究已暂停。Shelf 不再包含适配编译器或适配附件传输；二维码会话只提供原始资源。已有实验数据不会在启动时被自动删除，也不再被读取或发送。
+
 V0 的边界和非目标见 [tavern-shelf-seed.md](tavern-shelf-seed.md)。
 
 ## 验证

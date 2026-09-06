@@ -126,20 +126,9 @@ func Supported(path string) bool {
 }
 
 func ParseFile(path string) (Character, error) {
-	raw, format, image, err := ReadDocumentFile(path)
-	if err != nil {
-		return Character{}, err
-	}
-	return parseJSONBytes(raw, format, image)
-}
-
-// ReadDocumentFile returns the card JSON document without executing or
-// interpreting any embedded active content. PNG metadata is decoded with the
-// same size and checksum validation used by ParseFile.
-func ReadDocumentFile(path string) ([]byte, string, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, "", false, fmt.Errorf("open card: %w", err)
+		return Character{}, fmt.Errorf("open card: %w", err)
 	}
 	defer f.Close()
 
@@ -147,17 +136,16 @@ func ReadDocumentFile(path string) ([]byte, string, bool, error) {
 	case ".json":
 		raw, err := io.ReadAll(io.LimitReader(f, maxCardSize+1))
 		if err != nil {
-			return nil, "", false, fmt.Errorf("read JSON card: %w", err)
+			return Character{}, fmt.Errorf("read JSON card: %w", err)
 		}
 		if len(raw) > maxCardSize {
-			return nil, "", false, errors.New("character card exceeds size limit")
+			return Character{}, errors.New("character card exceeds size limit")
 		}
-		return raw, "json", false, nil
+		return parseJSONBytes(raw, "json", false)
 	case ".png":
-		raw, err := readPNGDocument(io.LimitReader(f, maxCardSize))
-		return raw, "png", true, err
+		return ParsePNG(io.LimitReader(f, maxCardSize))
 	default:
-		return nil, "", false, ErrUnsupported
+		return Character{}, ErrUnsupported
 	}
 }
 
@@ -425,44 +413,36 @@ func uriKind(uri string) string {
 }
 
 func ParsePNG(r io.Reader) (Character, error) {
-	raw, err := readPNGDocument(r)
-	if err != nil {
-		return Character{}, err
-	}
-	return parseJSONBytes(raw, "png", true)
-}
-
-func readPNGDocument(r io.Reader) ([]byte, error) {
 	signature := make([]byte, 8)
 	if _, err := io.ReadFull(r, signature); err != nil || !bytes.Equal(signature, []byte("\x89PNG\r\n\x1a\n")) {
-		return nil, ErrInvalidPNG
+		return Character{}, ErrInvalidPNG
 	}
 	payloads := make(map[string][]byte, 2)
 	for {
 		var length uint32
 		if err := binary.Read(r, binary.BigEndian, &length); err != nil {
-			return nil, fmt.Errorf("read PNG chunk length: %w", err)
+			return Character{}, fmt.Errorf("read PNG chunk length: %w", err)
 		}
 		if length > maxCardSize {
-			return nil, fmt.Errorf("PNG chunk is too large: %d bytes", length)
+			return Character{}, fmt.Errorf("PNG chunk is too large: %d bytes", length)
 		}
 		kind := make([]byte, 4)
 		if _, err := io.ReadFull(r, kind); err != nil {
-			return nil, fmt.Errorf("read PNG chunk type: %w", err)
+			return Character{}, fmt.Errorf("read PNG chunk type: %w", err)
 		}
 		data := make([]byte, length)
 		if _, err := io.ReadFull(r, data); err != nil {
-			return nil, fmt.Errorf("read PNG chunk data: %w", err)
+			return Character{}, fmt.Errorf("read PNG chunk data: %w", err)
 		}
 		var storedCRC uint32
 		if err := binary.Read(r, binary.BigEndian, &storedCRC); err != nil {
-			return nil, fmt.Errorf("read PNG chunk checksum: %w", err)
+			return Character{}, fmt.Errorf("read PNG chunk checksum: %w", err)
 		}
 		checksum := crc32.NewIEEE()
 		_, _ = checksum.Write(kind)
 		_, _ = checksum.Write(data)
 		if checksum.Sum32() != storedCRC {
-			return nil, fmt.Errorf("%w: corrupt %s chunk", ErrInvalidPNG, kind)
+			return Character{}, fmt.Errorf("%w: corrupt %s chunk", ErrInvalidPNG, kind)
 		}
 		var keyword string
 		var payload []byte
@@ -487,11 +467,11 @@ func readPNGDocument(r io.Reader) ([]byte, error) {
 		}
 		decoded, err := decodePayload(payload)
 		if err != nil {
-			return nil, err
+			return Character{}, err
 		}
-		return decoded, nil
+		return parseJSONBytes(decoded, "png", true)
 	}
-	return nil, fmt.Errorf("%w: character metadata chunk not found", ErrInvalidPNG)
+	return Character{}, fmt.Errorf("%w: character metadata chunk not found", ErrInvalidPNG)
 }
 
 func splitText(data []byte) (string, []byte) {

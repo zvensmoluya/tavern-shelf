@@ -39,16 +39,6 @@ type Source struct {
 	Size        int64
 	SHA256      string
 	ContentType string
-	Adaptation  *Attachment
-}
-
-type Attachment struct {
-	SchemaVersion int
-	Filename      string
-	Path          string
-	Size          int64
-	SHA256        string
-	ContentType   string
 }
 
 type Resolver func(ctx context.Context, kind, id string) (Source, error)
@@ -71,27 +61,17 @@ type Session struct {
 }
 
 type Manifest struct {
-	Protocol   string              `json:"protocol"`
-	Version    int                 `json:"version"`
-	Kind       string              `json:"kind"`
-	Subtype    string              `json:"subtype,omitempty"`
-	Name       string              `json:"name"`
-	Filename   string              `json:"filename"`
-	Size       int64               `json:"size"`
-	SHA256     string              `json:"sha256"`
-	MediaType  string              `json:"mediaType"`
-	SourceURL  string              `json:"sourceUrl"`
-	ExpiresAt  time.Time           `json:"expiresAt"`
-	Adaptation *AttachmentManifest `json:"adaptation,omitempty"`
-}
-
-type AttachmentManifest struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Filename      string `json:"filename"`
-	Size          int64  `json:"size"`
-	SHA256        string `json:"sha256"`
-	MediaType     string `json:"mediaType"`
-	URL           string `json:"url"`
+	Protocol  string    `json:"protocol"`
+	Version   int       `json:"version"`
+	Kind      string    `json:"kind"`
+	Subtype   string    `json:"subtype,omitempty"`
+	Name      string    `json:"name"`
+	Filename  string    `json:"filename"`
+	Size      int64     `json:"size"`
+	SHA256    string    `json:"sha256"`
+	MediaType string    `json:"mediaType"`
+	SourceURL string    `json:"sourceUrl"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type Server struct {
@@ -218,10 +198,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveManifest(w, r, session)
 		return
 	}
-	if parts[3] == "adaptation" && session.source.Adaptation != nil {
-		s.serveAttachment(w, r, *session.source.Adaptation)
-		return
-	}
 	if parts[3] != "source" {
 		http.NotFound(w, r)
 		return
@@ -275,23 +251,12 @@ func (s *Server) serveManifest(w http.ResponseWriter, r *http.Request, session S
 		SourceURL: transferSourceURL(session, r.Host),
 		ExpiresAt: session.ExpiresAt,
 	}
-	if attachment := session.source.Adaptation; attachment != nil {
-		manifest.Adaptation = &AttachmentManifest{
-			SchemaVersion: attachment.SchemaVersion, Filename: attachment.Filename,
-			Size: attachment.Size, SHA256: attachment.SHA256, MediaType: attachment.ContentType,
-			URL: transferResourceURL(session, r.Host, "adaptation"),
-		}
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(manifest)
 }
 
 func (s *Server) serveSource(w http.ResponseWriter, r *http.Request, session Session) {
 	serveFile(w, r, session.source.Path, session.Filename, session.Size, session.SHA256, session.source.ContentType)
-}
-
-func (s *Server) serveAttachment(w http.ResponseWriter, r *http.Request, attachment Attachment) {
-	serveFile(w, r, attachment.Path, attachment.Filename, attachment.Size, attachment.SHA256, attachment.ContentType)
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request, path, filename string, size int64, expectedSHA256, mediaType string) {
@@ -354,48 +319,6 @@ func validateSource(source *Source) error {
 	}
 	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), source.SHA256) {
 		return errors.New("transfer source failed its SHA-256 integrity check")
-	}
-	if source.Adaptation != nil {
-		if source.Kind != "character" {
-			return errors.New("only character transfers can include an adaptation")
-		}
-		if source.Adaptation.SchemaVersion != 1 || source.Adaptation.Path == "" || source.Adaptation.Filename == "" || source.Adaptation.SHA256 == "" {
-			return errors.New("adaptation attachment metadata is incomplete")
-		}
-		if source.Adaptation.ContentType == "" {
-			source.Adaptation.ContentType = "application/vnd.tavern-player.adaptation+json"
-		}
-		if err := validateAttachment(source.Adaptation); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateAttachment(attachment *Attachment) error {
-	info, err := os.Stat(attachment.Path)
-	if err != nil {
-		return fmt.Errorf("inspect adaptation attachment: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return errors.New("adaptation attachment is not a regular file")
-	}
-	attachment.Size = info.Size()
-	file, err := os.Open(attachment.Path)
-	if err != nil {
-		return fmt.Errorf("open adaptation attachment: %w", err)
-	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(hash, file)
-	closeErr := file.Close()
-	if copyErr != nil {
-		return fmt.Errorf("hash adaptation attachment: %w", copyErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close adaptation attachment: %w", closeErr)
-	}
-	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), attachment.SHA256) {
-		return errors.New("adaptation attachment failed its SHA-256 integrity check")
 	}
 	return nil
 }
@@ -518,10 +441,6 @@ func addressRank(value string) int {
 }
 
 func transferSourceURL(session Session, requestHost string) string {
-	return transferResourceURL(session, requestHost, "source")
-}
-
-func transferResourceURL(session Session, requestHost, resource string) string {
 	host := ""
 	for _, address := range session.Addresses {
 		parsed, err := url.Parse(address)
@@ -536,7 +455,7 @@ func transferResourceURL(session Session, requestHost, resource string) string {
 			break
 		}
 	}
-	return "http://" + host + "/v1/transfers/" + session.ID + "/" + resource
+	return "http://" + host + "/v1/transfers/" + session.ID + "/source"
 }
 
 func contentType(filename string) string {

@@ -176,9 +176,7 @@ Application Data
 - metadata；
 - thumbnail；
 - cache；
-- AI adaptation；
-- compiled artifact；
-- Tavern Player-specific derived data。
+- 用于浏览的结构化内容投影。
 
 但这些都不能破坏原始 Source。
 
@@ -418,29 +416,13 @@ Tavern Player
 
 ---
 
-# 12. AI / Character Adaptation
+# 12. 原生适配边界
 
-V0 不实现。
+Player 的原生适配实验在 Tavern Player 内完成，相关架构研究已暂停。
 
-未来可能存在：
+Shelf 负责安全保存、整理和传输原始资源，以及生成可重建的确定性 Content Manifest。Shelf 不承载 Program View 提取、模型编译、Player 原生 UI schema 或适配产物存储与传输。
 
-```text
-Original ST Card
-        ↓
-Character Adaptation
-        ↓
-Tavern Player-ready artifact
-```
-
-Tavern Shelf 很适合作为这类处理的宿主。
-
-但现在不要为了未来 AI Compiler 提前建设复杂系统。
-
-只需保证：
-
-> 原始 Source 与未来 Derived Artifact 可以自然共存。
-
-即使 AI adaptation 永远不实现，Tavern Shelf 也必须仍然是一个完整有用的项目。
+原始 Source 始终是事实来源，解析字段和缩略图等派生数据必须可以从 Source 重建。
 
 ---
 
