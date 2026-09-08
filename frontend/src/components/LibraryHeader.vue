@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { RefreshCw, Search } from "@lucide/vue";
+import { Link, RefreshCw, Search } from "@lucide/vue";
+import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 
 defineProps<{ count: number; query: string; refreshing: boolean; title: string; countLabel: string; searchPlaceholder: string }>();
-defineEmits<{ "update:query": [value: string]; refresh: [] }>();
+defineEmits<{ "update:query": [value: string]; refresh: []; importLink: [] }>();
 </script>
 
 <template>
@@ -26,6 +27,7 @@ defineEmits<{ "update:query": [value: string]; refresh: [] }>();
           @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
         >
       </label>
+      <ShelfButton :icon="Link" class="shrink-0" @click="$emit('importLink')">链接导入</ShelfButton>
       <ShelfIconButton :icon="RefreshCw" label="刷新 Library" :class="refreshing ? '[&_svg]:animate-spin' : ''" @click="$emit('refresh')" />
     </div>
   </header>

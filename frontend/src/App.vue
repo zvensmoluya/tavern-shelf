@@ -7,6 +7,7 @@ import DropImportOverlay from "@/components/DropImportOverlay.vue";
 import EmptyLibrary from "@/components/EmptyLibrary.vue";
 import LibraryCard from "@/components/LibraryCard.vue";
 import LibraryHeader from "@/components/LibraryHeader.vue";
+import LinkImportDialog from "@/components/LinkImportDialog.vue";
 import ResourceCard from "@/components/ResourceCard.vue";
 import ResourceDetailDialog from "@/components/ResourceDetailDialog.vue";
 import ShelfRail from "@/components/ShelfRail.vue";
@@ -33,6 +34,7 @@ const transferTarget = ref<TransferTarget | null>(null);
 const deleting = ref(false);
 const toolBusy = ref(false);
 const importing = ref(false);
+const linkImportOpen = ref(false);
 const savingOrganization = ref(false);
 const activeCharacterView = ref("all");
 const characterSort = ref("newest");
@@ -490,6 +492,7 @@ onBeforeUnmount(() => {
         :count-label="sectionMeta.countLabel"
         :search-placeholder="sectionMeta.placeholder"
         @refresh="loadLibrary()"
+        @import-link="linkImportOpen = true"
       />
 
       <CharacterOrganizerBar
@@ -589,6 +592,7 @@ onBeforeUnmount(() => {
   />
 
   <DropImportOverlay :importing="importing" @import="importDroppedFiles" />
+  <LinkImportDialog v-model:open="linkImportOpen" @imported="result => { showNotice(result.duplicate ? `${result.name} 已在 Shelf` : `已收藏 ${result.name}`); void loadLibrary(true); void loadStatus(); }" />
 
   <ResourceDetailDialog
     :open="Boolean(selectedResource)"

@@ -118,6 +118,45 @@ func HandlerWithConnectorOrigins(application *app.App, connectorOrigins []string
 			"id": id, "kind": result.Kind, "name": result.Name, "duplicate": result.Duplicate,
 		})
 	})
+	mux.HandleFunc("POST /api/imports/url", func(w http.ResponseWriter, r *http.Request) {
+		// This request includes the remote download; other endpoints keep their usual deadline.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(100 * time.Second))
+		mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if mediaType != "application/json" {
+			writeError(w, http.StatusUnsupportedMediaType, errors.New("请使用 JSON 提交下载链接"))
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host && origin != "https://"+r.Host {
+			writeError(w, http.StatusForbidden, errors.New("请从 Shelf 窗口导入链接"))
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 20<<10)
+		var request struct {
+			URL string `json:"url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || strings.TrimSpace(request.URL) == "" {
+			writeError(w, http.StatusBadRequest, errors.New("请输入下载链接"))
+			return
+		}
+		result, err := application.ImportURL(r.Context(), request.URL)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, app.ErrUploadTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			writeError(w, status, err)
+			return
+		}
+		id := result.Character.ID
+		if result.Resource.ID != "" {
+			id = result.Resource.ID
+		}
+		status := http.StatusCreated
+		if result.Duplicate {
+			status = http.StatusOK
+		}
+		writeJSON(w, status, map[string]any{"id": id, "kind": result.Kind, "name": result.Name, "duplicate": result.Duplicate})
+	})
 	mux.HandleFunc("GET /api/backup", func(w http.ResponseWriter, r *http.Request) {
 		file, err := os.CreateTemp(application.Paths.Staging, "backup-*.zip")
 		if err != nil {

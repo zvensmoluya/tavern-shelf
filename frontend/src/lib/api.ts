@@ -10,6 +10,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  importURL: (url: string) => request<ImportResult>("/api/imports/url", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+  }),
   listCharacters: () => request<Character[]>("/api/characters"),
   organizeCharacter: (id: string, organization: CharacterOrganization) => request<Character>(`/api/characters/${encodeURIComponent(id)}/organization`, {
     method: "PUT",

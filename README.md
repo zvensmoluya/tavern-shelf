@@ -120,6 +120,12 @@ Shelf 提供三种明确的来源模式：
 
 此外可以直接把一个或多个 PNG / JSON 拖到 Shelf 窗口完成收藏。拖拽上传先进入 Shelf 私有暂存区，校验并收录完成后清理暂存副本，不会修改拖拽来源。移除长期监视目录只会停止监视，不会删除目录或其中的文件。
 
+顶部的「链接导入」使用同一个入口接收公开 PNG / JSON 附件地址，以及 Chub / CharacterHub、RisuRealm、AICharacterCards、Pygmalion 的角色卡详情地址。也支持 ST 的 Chub `作者/角色`、`lorebooks/作者/世界书`、`AICC/作者/角色` 和 Pygmalion UUID 输入。这里不是完整复制 ST 的所有站点适配；JanitorAI / Janny 和 Perchance 页面暂未适配。
+
+Discord 链接必须保留 `ex`、`is`、`hm` 等签名参数；媒体预览附件地址会转换为 CDN 原附件地址，移除缩放和转码参数。过期、登录限制或网站拦截会明确报错，不会把错误网页收录成卡。下载不需要 Discord 账号凭据，也不会自动刷新过期签名。
+
+链接下载沿用 64 MiB 上限、暂存、内容哈希去重和原始文件保留策略。Chub 优先保存网站提供的角色卡 PNG，若只是封面则获取其原始 JSON 导出；Pygmalion 保存导出响应中的完整角色卡 JSON 对象，不重新组装字段或封面。链接本身不持久化。下载支持运行环境的 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`；直连验证并固定公网 DNS 地址，显式配置的代理负责远端 DNS 与网络访问边界。本机、内网 IP 和本地名称不能作为下载目标。
+
 ## 当前支持
 
 - SillyTavern JSON Character Card，包括常见 v1 和 v2 外层结构；
