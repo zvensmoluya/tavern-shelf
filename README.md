@@ -48,6 +48,8 @@ Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单
 
 需要 Go 1.26 或更新版本。修改或重新构建前端时还需要 Node.js 22.12 或更新版本与 npm；最终生成的 Tavern Shelf 程序会嵌入前端产物，普通用户不需要安装 Node.js。
 
+`internal/webui/static/` 中的内置 UI 已纳入版本控制，因此检出仓库后可直接运行下述 Go 命令。修改前端后，应在 `frontend/` 运行 `npm run build`，将生成的静态资源与源码一起提交，包括删除被新文件替换的旧 JS/CSS；该目录不属于应忽略的临时构建输出。
+
 Headless 模式：
 
 ```powershell

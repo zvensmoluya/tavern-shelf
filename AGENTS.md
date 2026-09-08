@@ -43,5 +43,6 @@
 ## Repository hygiene
 
 - 不提交密钥、凭据、本机绝对路径、用户 Library、SQLite 数据库、构建产物或缓存。
+- `internal/webui/static/` 是上述构建产物规则的明确例外：它是已纳入版本控制、供 Go embed 使用的内置 UI。前端改动后运行 `npm run build`，将该目录的新增、更新和过期文件删除与源码一起提交；不要加入 `.gitignore`。可执行文件、安装包、依赖目录及缓存仍不提交。
 - 保留与当前任务无关的用户改动；不要使用破坏性 Git 命令处理它们。
 - 代理可以根据工作阶段的完整性自行决定是否创建提交；涉及不完整实现、失败验证或与当前任务无关的用户改动时不要提交。提交信息采用 Conventional Commits：`type(scope): summary`，summary 使用简短英文祈使语气。
