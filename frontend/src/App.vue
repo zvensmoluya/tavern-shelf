@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { AlertCircle, BookOpenText, LoaderCircle, SearchX, SlidersHorizontal } from "@lucide/vue";
 import CharacterOrganizerBar from "@/components/CharacterOrganizerBar.vue";
 import CharacterDetailDialog from "@/components/CharacterDetailDialog.vue";
@@ -49,6 +49,27 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const shelf = characters;
+const expandRelated = ref(false);
+const lastViewed = new Map<string, string>();
+watch(selectedID, id => {
+  const character = characters.value.find(item => item.id === id);
+  if (character) lastViewed.set(groupID(character), character.id);
+});
+const shelfCards = computed(() => {
+  const groups = new Map<string, Character[]>();
+  for (const character of filteredCharacters.value) {
+    const key = groupID(character);
+    groups.set(key, [...(groups.get(key) || []), character]);
+  }
+  return [...groups.values()].flatMap(matching => {
+    const total = membersOf(characters.value, matching[0]!).length;
+    return (expandRelated.value ? matching : matching.slice(0, 1)).map(character => ({ character, total, matching }));
+  });
+});
+function openShelfCard(character: Character) {
+  const remembered = lastViewed.get(groupID(character));
+  selectedID.value = !expandRelated.value && filteredCharacters.value.some(item => item.id === remembered && groupID(item) === groupID(character)) ? remembered! : character.id;
+}
 
 const filteredCharacters = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
@@ -556,11 +577,14 @@ onBeforeUnmount(() => {
         <div v-else-if="activeSection === 'characters'">
           <header class="mb-4 flex items-center justify-between">
             <h2 class="text-[12px] font-medium text-shelf-text-soft">{{ query.trim() ? "搜索结果" : activeCharacterViewLabel }}</h2>
-            <span class="text-[10px] text-shelf-quiet">{{ filteredCharacters.length }}{{ query.trim() ? ` / ${shelf.length}` : "" }}</span>
+            <div class="flex items-center gap-3">
+              <button type="button" class="text-[11px] text-shelf-muted hover:text-shelf-text" :aria-pressed="expandRelated" @click="expandRelated = !expandRelated">{{ expandRelated ? '收起关联卡' : '展开关联卡' }}</button>
+              <span class="text-[10px] text-shelf-quiet">{{ filteredCharacters.length }} 张</span>
+            </div>
           </header>
 
           <div v-if="filteredCharacters.length" class="grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-x-5 gap-y-8 max-[860px]:grid-cols-[repeat(auto-fill,minmax(145px,1fr))] max-[860px]:gap-x-3.5 max-[860px]:gap-y-6">
-            <LibraryCard v-for="character in filteredCharacters" :key="character.id" :character="character" :related-count="membersOf(characters, character).length - 1" @open="selectedID = $event.id" @favorite="toggleFavorite" />
+            <LibraryCard v-for="entry in shelfCards" :key="entry.character.id" :character="entry.character" :related-count="entry.total - 1" :covers="membersOf(characters, entry.character)" :stacked="!expandRelated && entry.total > 1" :matching-count="entry.matching.length" @open="openShelfCard" @favorite="toggleFavorite" />
           </div>
 
           <div v-else class="grid min-h-[42vh] place-content-center justify-items-center gap-3 text-center text-shelf-muted">
@@ -607,6 +631,7 @@ onBeforeUnmount(() => {
   />
 
   <CharacterDetailDialog
+    :matching-ids="filteredCharacters.map(item => item.id)"
     :characters="characters"
     @select="selectedID = $event"
     @changed="loadLibrary(true)"

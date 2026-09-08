@@ -40,7 +40,7 @@ import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 import { characterTone, formatCardDate, formatImported, formatSize, manifestOf } from "@/lib/format";
 import type { Character, CharacterOrganization, Collection, RegexScript } from "@/types";
 
-const props = defineProps<{ open: boolean; characters: Character[]; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
+const props = defineProps<{ open: boolean; matchingIds: string[]; characters: Character[]; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
 const emit = defineEmits<{ select: [id: string]; changed: []; "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character]; organize: [organization: CharacterOrganization] }>();
 
 const favorite = ref(false);
@@ -129,18 +129,17 @@ function saveOrganization() {
               <span v-if="profile.characterVersion" class="before:mr-2 before:text-shelf-quiet before:content-['·']">版本 {{ profile.characterVersion }}</span>
             </div>
 
+            <RelatedCharacters :character="character" :characters="characters" :matching-ids="matchingIds" @select="emit('select', $event)" @changed="emit('changed')" />
             <div v-if="profile.tags?.length" class="mb-6 flex flex-wrap gap-1.5">
               <span v-for="tag in profile.tags" :key="tag" class="rounded-full border border-shelf-line px-2.5 py-1 text-[10px] text-shelf-muted">{{ tag }}</span>
             </div>
 
-            <div class="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-shelf-line bg-black/10 p-3">
-              <div class="h-12 w-8 shrink-0 overflow-hidden rounded"><CharacterCover :src="character.avatarUrl" :name="character.name" /></div>
-              <div class="min-w-0 flex-1"><p class="text-[10px] text-shelf-muted">当前查看与下载的原件</p><p class="mt-1 break-all text-[11px]">{{ character.sourceFilename }}</p></div>
+            <div class="mb-5 flex flex-wrap items-center gap-2">
               <a :href="`${character.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line px-3 text-[11px]"><Download :size="14" />下载原件</a>
               <ShelfButton :icon="QrCode" @click="emit('transfer', character)">传输</ShelfButton>
             </div>
 
-            <RelatedCharacters :character="character" :characters="characters" @select="emit('select', $event)" @changed="emit('changed')" />
+
             <div v-if="overview.length" class="mb-7 flex flex-wrap gap-x-6 gap-y-2">
               <div v-for="([count, label]) in overview" :key="label" class="flex items-baseline gap-1.5">
                 <strong class="text-[17px] font-semibold text-shelf-text">{{ count }}</strong>
