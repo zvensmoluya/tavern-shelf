@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Star } from "@lucide/vue";
+import { Link2, Star } from "@lucide/vue";
 import { characterTone, manifestOf } from "@/lib/format";
 import CharacterCover from "@/components/CharacterCover.vue";
 import type { Character } from "@/types";
 
-const props = defineProps<{ character: Character }>();
+const props = defineProps<{ character: Character; relatedCount: number }>();
 defineEmits<{ open: [character: Character]; favorite: [character: Character] }>();
 
 const manifest = computed(() => manifestOf(props.character));
@@ -30,8 +30,10 @@ const metrics = computed(() => {
         <span v-for="metric in metrics" :key="metric" class="rounded-md bg-black/65 px-2 py-1 text-[9px] text-shelf-text-soft backdrop-blur">{{ metric }}</span>
       </div>
     </div>
+    <p v-if="relatedCount" class="mt-2 inline-flex items-center gap-1 text-[10px] text-shelf-muted"><Link2 :size="12" />{{ relatedCount }} 张关联卡</p>
     <h2 class="mt-3 truncate px-px text-[13px] font-semibold leading-5 text-shelf-text">{{ character.name }}</h2>
     <p class="mt-0.5 truncate px-px text-[10px] text-shelf-muted">{{ character.creator || "未知创作者" }}</p>
+    <p class="mt-1 truncate text-[10px] text-shelf-quiet" :title="character.sourceFilename">{{ character.sourceFilename }}</p>
     </button>
     <button type="button" class="absolute right-2 top-2 grid size-8 place-items-center rounded-full border border-white/15 bg-black/60 text-white/70 opacity-0 shadow-lg backdrop-blur transition hover:bg-black/80 hover:text-amber-200 group-hover:opacity-100 group-focus-within:opacity-100" :class="character.favorite ? '!opacity-100 text-amber-300' : ''" :aria-label="character.favorite ? `取消收藏 ${character.name}` : `收藏 ${character.name}`" @click.stop="$emit('favorite', character)">
       <Star :size="15" :fill="character.favorite ? 'currentColor' : 'none'" aria-hidden="true" />

@@ -30,6 +30,7 @@ import {
 } from "reka-ui";
 import CharacterBookPanel from "@/components/CharacterBookPanel.vue";
 import CharacterCover from "@/components/CharacterCover.vue";
+import RelatedCharacters from "@/components/RelatedCharacters.vue";
 import StructuredDescription from "@/components/StructuredDescription.vue";
 import ContentSection from "@/components/ui/ContentSection.vue";
 import ExpandableText from "@/components/ui/ExpandableText.vue";
@@ -39,8 +40,8 @@ import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
 import { characterTone, formatCardDate, formatImported, formatSize, manifestOf } from "@/lib/format";
 import type { Character, CharacterOrganization, Collection, RegexScript } from "@/types";
 
-const props = defineProps<{ open: boolean; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
-const emit = defineEmits<{ "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character]; organize: [organization: CharacterOrganization] }>();
+const props = defineProps<{ open: boolean; characters: Character[]; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
+const emit = defineEmits<{ select: [id: string]; changed: []; "update:open": [open: boolean]; remove: [character: Character]; transfer: [character: Character]; organize: [organization: CharacterOrganization] }>();
 
 const favorite = ref(false);
 const note = ref("");
@@ -116,7 +117,6 @@ function saveOrganization() {
 
         <div class="relative min-h-0 overflow-hidden bg-shelf-raised max-[610px]:h-[48vh]">
           <CharacterCover :src="character.avatarUrl" :name="character.name" class="text-8xl font-light" />
-          <div class="detail-cover-shade pointer-events-none absolute inset-0 max-[610px]:bg-gradient-to-t max-[610px]:from-shelf-surface max-[610px]:to-transparent" />
         </div>
 
         <div data-testid="detail-scroll" class="shelf-scrollbar min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain max-[610px]:h-[52vh]">
@@ -133,6 +133,14 @@ function saveOrganization() {
               <span v-for="tag in profile.tags" :key="tag" class="rounded-full border border-shelf-line px-2.5 py-1 text-[10px] text-shelf-muted">{{ tag }}</span>
             </div>
 
+            <div class="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-shelf-line bg-black/10 p-3">
+              <div class="h-12 w-8 shrink-0 overflow-hidden rounded"><CharacterCover :src="character.avatarUrl" :name="character.name" /></div>
+              <div class="min-w-0 flex-1"><p class="text-[10px] text-shelf-muted">当前查看与下载的原件</p><p class="mt-1 break-all text-[11px]">{{ character.sourceFilename }}</p></div>
+              <a :href="`${character.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line px-3 text-[11px]"><Download :size="14" />下载原件</a>
+              <ShelfButton :icon="QrCode" @click="emit('transfer', character)">传输</ShelfButton>
+            </div>
+
+            <RelatedCharacters :character="character" :characters="characters" @select="emit('select', $event)" @changed="emit('changed')" />
             <div v-if="overview.length" class="mb-7 flex flex-wrap gap-x-6 gap-y-2">
               <div v-for="([count, label]) in overview" :key="label" class="flex items-baseline gap-1.5">
                 <strong class="text-[17px] font-semibold text-shelf-text">{{ count }}</strong>
@@ -149,7 +157,7 @@ function saveOrganization() {
               </ShelfDisclosure>
             </ContentSection>
 
-            <ContentSection title="我的收藏信息" meta="仅保存在 Shelf，不改写角色卡">
+            <ContentSection title="这份原件的收藏信息" meta="仅保存在 Shelf，不改写角色卡">
               <div class="rounded-xl border border-shelf-line bg-white/[.018] p-4">
                 <button type="button" class="mb-4 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] transition" :class="favorite ? 'border-amber-300/30 bg-amber-300/[.08] text-amber-200' : 'border-shelf-line text-shelf-muted hover:text-shelf-text-soft'" @click="favorite = !favorite">
                   <Star :size="15" :fill="favorite ? 'currentColor' : 'none'" aria-hidden="true" />{{ favorite ? "已收藏" : "加入收藏" }}
@@ -256,10 +264,10 @@ function saveOrganization() {
                   <div v-if="manifest.modifiedDate"><small class="mb-1 text-[9px] uppercase tracking-[.1em] text-shelf-quiet">Card modified</small><span class="font-mono text-[10px]">{{ formatCardDate(manifest.modifiedDate) }}</span></div>
                   <div v-if="manifest.sources.length"><small class="mb-1 text-[9px] uppercase tracking-[.1em] text-shelf-quiet">Card sources</small><span class="font-mono text-[10px]">{{ manifest.sources.join(" · ") }}</span></div>
                 </div>
-                <div class="mt-5 flex items-center gap-2 border-t border-shelf-line pt-4">
-                  <a :href="`${character.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line bg-white/[.025] px-3 text-[11px] font-medium text-shelf-text-soft no-underline transition hover:border-shelf-line-strong hover:bg-white/[.05] hover:text-shelf-text"><Download :size="15" aria-hidden="true" />导出原始卡</a>
+                <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-shelf-line pt-4">
+                  <a :href="`${character.sourceUrl}?download=1`" class="inline-flex h-9 items-center gap-2 rounded-lg border border-shelf-line bg-white/[.025] px-3 text-[11px] font-medium text-shelf-text-soft no-underline transition hover:border-shelf-line-strong hover:bg-white/[.05] hover:text-shelf-text"><Download :size="15" aria-hidden="true" />下载当前原件</a>
                   <ShelfButton :icon="QrCode" @click="emit('transfer', character)">二维码传输</ShelfButton>
-                  <ShelfButton :icon="Trash2" variant="danger" :disabled="deleting" class="ml-auto" @click="emit('remove', character)">{{ deleting ? "正在移除…" : "移至 Shelf Trash" }}</ShelfButton>
+                  <ShelfButton :icon="Trash2" variant="danger" :disabled="deleting" class="ml-auto" @click="emit('remove', character)">{{ deleting ? "正在移除…" : "移除此原件" }}</ShelfButton>
                 </div>
               </ShelfDisclosure>
             </div>

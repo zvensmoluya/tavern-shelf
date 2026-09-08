@@ -37,6 +37,23 @@ func HandlerWithConnectorOrigins(application *app.App, connectorOrigins []string
 		return nil, fmt.Errorf("open embedded UI: %w", err)
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/characters/{id}/association", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Action string `json:"action"`
+			Target string `json:"target"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := application.Store.ChangeAssociation(r.Context(), r.PathValue("id"), body.Action, body.Target); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	registerConnectorManagement(mux, application)
 	connectorHandler := ConnectorHandler(application, connectorOrigins...)
 	mux.Handle("GET /connector/", connectorHandler)

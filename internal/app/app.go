@@ -336,7 +336,7 @@ func (a *App) Delete(ctx context.Context, id string) error {
 	if err := os.Rename(managedDir, trashDir); err != nil {
 		return fmt.Errorf("move character to Shelf Trash: %w", err)
 	}
-	metadata := trashMetadata{Kind: "character", Name: character.Name, SourceFilename: character.SourceFilename, DeletedAt: time.Now().UTC()}
+	metadata := trashMetadata{GroupID: character.GroupID, GroupReason: character.GroupReason, ImportedAt: character.ImportedAt, Kind: "character", Name: character.Name, SourceFilename: character.SourceFilename, DeletedAt: time.Now().UTC()}
 	if err := writeTrashMetadata(trashDir, metadata); err != nil {
 		_ = os.Rename(trashDir, managedDir)
 		return err
@@ -364,7 +364,7 @@ func (a *App) DeleteResource(ctx context.Context, id string) error {
 	if err := os.Rename(managedDir, trashDir); err != nil {
 		return fmt.Errorf("move resource to Shelf Trash: %w", err)
 	}
-	metadata := trashMetadata{Kind: resource.Kind, Name: resource.Name, SourceFilename: resource.SourceFilename, DeletedAt: time.Now().UTC()}
+	metadata := trashMetadata{ImportedAt: resource.ImportedAt, Kind: resource.Kind, Name: resource.Name, SourceFilename: resource.SourceFilename, DeletedAt: time.Now().UTC()}
 	if err := writeTrashMetadata(trashDir, metadata); err != nil {
 		_ = os.Rename(trashDir, managedDir)
 		return err
@@ -396,7 +396,7 @@ func (a *App) backfillManifests(ctx context.Context) error {
 		return fmt.Errorf("list characters for content manifest migration: %w", err)
 	}
 	for _, character := range characters {
-		if !character.Manifest.Empty() {
+		if !character.Manifest.Empty() && character.GroupID != "" {
 			continue
 		}
 		path := filepath.Join(a.Paths.Library, character.SourceRelPath)
@@ -408,6 +408,11 @@ func (a *App) backfillManifests(ctx context.Context) error {
 		if err != nil {
 			a.logger.Warn("could not rebuild character content manifest", "character", character.ID, "error", err)
 			continue
+		}
+		character.CoverHash = parsed.CoverHash
+		character.ContentHash, character.IdentityKey = parsed.ContentHash, parsed.IdentityKey
+		if err := a.Store.RebuildIdentity(ctx, character); err != nil {
+			return fmt.Errorf("rebuild character identity: %w", err)
 		}
 		if err := a.Store.UpdateParsed(ctx, library.Character{
 			ID: character.ID, Name: parsed.Name, Creator: parsed.Creator,

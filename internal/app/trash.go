@@ -28,6 +28,9 @@ type TrashItem struct {
 }
 
 type trashMetadata struct {
+	GroupID        string    `json:"groupId,omitempty"`
+	GroupReason    string    `json:"groupReason,omitempty"`
+	ImportedAt     time.Time `json:"importedAt,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
 	SourceFilename string    `json:"sourceFilename"`
@@ -86,6 +89,31 @@ func (a *App) RestoreTrash(ctx context.Context, id string) (RestoreSummary, erro
 	}
 	if closeErr != nil {
 		return RestoreSummary{}, fmt.Errorf("close Trash source: %w", closeErr)
+	}
+	if !result.Duplicate {
+		var metadata trashMetadata
+		raw, readErr := os.ReadFile(filepath.Join(directory, trashMetadataFilename))
+		if readErr == nil {
+			if err := json.Unmarshal(raw, &metadata); err != nil {
+				return RestoreSummary{}, fmt.Errorf("read restored metadata: %w", err)
+			}
+			sourceID := result.Character.ID
+			if sourceID == "" {
+				sourceID = result.Resource.ID
+			}
+			if !metadata.ImportedAt.IsZero() {
+				if err := a.Store.SetImportedAt(ctx, result.Kind, sourceID, metadata.ImportedAt); err != nil {
+					return RestoreSummary{}, err
+				}
+			}
+			if result.Kind == "character" {
+				if err := a.Store.RestoreAssociation(ctx, sourceID, metadata.GroupID, metadata.GroupReason); err != nil {
+					return RestoreSummary{}, err
+				}
+			}
+		} else if !os.IsNotExist(readErr) {
+			return RestoreSummary{}, readErr
+		}
 	}
 	if err := os.RemoveAll(directory); err != nil {
 		return RestoreSummary{}, fmt.Errorf("remove restored Trash item: %w", err)

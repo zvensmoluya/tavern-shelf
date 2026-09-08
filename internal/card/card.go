@@ -28,6 +28,9 @@ const MaxSourceSize int64 = 64 << 20
 const maxCardSize = int(MaxSourceSize)
 
 type Character struct {
+	CoverHash      string `json:"coverHash,omitempty"`
+	ContentHash    string `json:"contentHash,omitempty"`
+	IdentityKey    string `json:"-"`
 	nameMissing    bool
 	Name           string           `json:"name"`
 	Creator        string           `json:"creator,omitempty"`
@@ -204,6 +207,8 @@ func parseJSONBytes(raw []byte, format string, image bool) (Character, error) {
 	content := buildManifest(data, raw, &warnings)
 	content.Warnings = warnings
 	return Character{
+		ContentHash:    contentFingerprint(raw),
+		IdentityKey:    identityKey(data.Name, data.Creator, nameMissing),
 		nameMissing:    nameMissing,
 		Name:           content.Character.Name,
 		Creator:        content.Character.Creator,
@@ -537,6 +542,9 @@ func parsePNGBytes(raw []byte) (Character, error) {
 	}
 	_, coverErr := png.DecodeConfig(bytes.NewReader(raw))
 	result.SourceIsImage = coverErr == nil && hasImageData
+	if result.SourceIsImage {
+		result.CoverHash = coverFingerprint(raw)
+	}
 	if !result.SourceIsImage {
 		warnings = append(warnings, "封面暂时无法显示；角色卡原始文件已保留。")
 	}

@@ -13,6 +13,7 @@ import ResourceDetailDialog from "@/components/ResourceDetailDialog.vue";
 import ShelfRail from "@/components/ShelfRail.vue";
 import ShelfToolsPanel from "@/components/ShelfToolsPanel.vue";
 import TransferDialog from "@/components/TransferDialog.vue";
+import { adjacentCharacters, membersOf, groupID, contentID } from "@/lib/associations";
 import { api } from "@/lib/api";
 import type { Character, CharacterOrganization, Collection, ConnectorPairing, ConnectorStatus, LibrarySection, ShelfResource, ShelfStatus, TransferTarget, TrashItem } from "@/types";
 
@@ -41,14 +42,18 @@ const characterSort = ref("newest");
 const characterFormat = ref("all");
 const characterFeature = ref("all");
 const characterTag = ref("");
+const importAttention = ref<{ id: string; message: string } | null>(null);
+const revisionBusy = ref(false);
 const notice = ref<{ message: string; error: boolean } | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+const shelf = characters;
+
 const filteredCharacters = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
   const recentThreshold = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const filtered = characters.value.filter(character => {
+  const filtered = shelf.value.filter(character => {
     if (activeCharacterView.value === "favorites" && !character.favorite) return false;
     if (activeCharacterView.value === "recent" && new Date(character.importedAt).getTime() < recentThreshold) return false;
     if (activeCharacterView.value === "unfiled" && character.collectionIds.length) return false;
@@ -61,13 +66,13 @@ const filteredCharacters = computed(() => {
     if (characterTag.value && !character.tags.some(tag => tag.toLocaleLowerCase() === characterTag.value.toLocaleLowerCase())) return false;
     return !needle || `${character.name} ${character.creator || ""} ${(character.tags || []).join(" ")} ${character.note || ""}`.toLocaleLowerCase().includes(needle);
   });
-  return [...filtered].sort((left, right) => {
+  return adjacentCharacters([...filtered].sort((left, right) => {
     if (characterSort.value === "oldest") return new Date(left.importedAt).getTime() - new Date(right.importedAt).getTime();
     if (characterSort.value === "name") return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
     if (characterSort.value === "creator") return (left.creator || "").localeCompare(right.creator || "", undefined, { sensitivity: "base" }) || left.name.localeCompare(right.name);
     if (characterSort.value === "favorite") return Number(right.favorite) - Number(left.favorite) || new Date(right.importedAt).getTime() - new Date(left.importedAt).getTime();
     return new Date(right.importedAt).getTime() - new Date(left.importedAt).getTime();
-  });
+  }));
 });
 
 const availableTags = computed(() => [...new Set(characters.value.flatMap(character => character.tags || []))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })));
@@ -92,7 +97,7 @@ const sectionMeta = computed(() => {
   if (activeSection.value === "presets") {
     return { title: "预设", count: sectionResources.value.length, countLabel: "个预设", placeholder: "搜索预设名称或类型" };
   }
-  return { title: "角色", count: characters.value.length, countLabel: "位角色", placeholder: "搜索角色、创作者或标签" };
+  return { title: "角色", count: shelf.value.length, countLabel: "位角色", placeholder: "搜索角色、创作者或标签" };
 });
 
 const selected = computed(() => characters.value.find(character => character.id === selectedID.value) || null);
@@ -108,6 +113,20 @@ async function loadLibrary(quiet = false) {
   if (!quiet) refreshing.value = true;
   try {
     const [nextCharacters, nextResources, nextCollections] = await Promise.all([api.listCharacters(), api.listResources(), api.listCollections()]);
+    if (!loading.value) {
+      const added = nextCharacters.filter(item => !characters.value.some(existing => existing.id === item.id));
+      const newest = added[0];
+      if (newest) {
+        const previous = characters.value.filter(item => groupID(item) === groupID(newest));
+        if (previous.length) {
+          const sameContent = previous.some(item => contentID(item) === contentID(newest));
+          const newCover = newest.avatarUrl && (!newest.coverHash || !previous.some(item => item.coverHash === newest.coverHash));
+          importAttention.value = { id: newest.id, message: sameContent ? `「${newest.name}」已独立收藏，${newCover ? '封面不同，' : ''}数据与已收藏的卡一致` : `「${newest.name}」已独立收藏，并关联到相同名称与作者的卡` };
+        } else if (characters.value.some(item => item.name === newest.name)) {
+          importAttention.value = { id: newest.id, message: `「${newest.name}」可能与已有卡相关，已独立保存，可查看并关联` };
+        }
+      }
+    }
     characters.value = nextCharacters;
     resources.value = nextResources;
     collections.value = nextCollections;
@@ -265,6 +284,14 @@ function toggleFavorite(character: Character) {
   void organizeCharacter(character, { favorite: !character.favorite, note: character.note || "", collectionIds: character.collectionIds }, character.favorite ? "已取消收藏" : "已加入收藏");
 }
 
+async function splitImported() {
+  if (!importAttention.value || revisionBusy.value) return;
+  revisionBusy.value = true;
+  try { await api.changeAssociation(importAttention.value.id, "split"); await loadLibrary(true); importAttention.value = null; showNotice("已移出关联"); }
+  catch (error) { showNotice(`拆分失败：${error instanceof Error ? error.message : '未知错误'}`, true); }
+  finally { revisionBusy.value = false; }
+}
+
 function saveSelectedOrganization(organization: CharacterOrganization) {
   if (selected.value) void organizeCharacter(selected.value, organization);
 }
@@ -415,7 +442,7 @@ async function setAutoStart(enabled: boolean) {
 }
 
 async function removeCharacter(character: Character) {
-  const confirmed = window.confirm(`确认从 Library 移除“${character.name}”？\n\n原始卡会移入 Tavern Shelf 自己的 Trash，不会触碰其他文件。`);
+  const confirmed = window.confirm(`确认移除“${character.name}”的这份原件？\n\n当前原件会移入 Shelf Trash，其他修订和封面会保留。`);
   if (!confirmed) return;
   deleting.value = true;
   try {
@@ -529,11 +556,11 @@ onBeforeUnmount(() => {
         <div v-else-if="activeSection === 'characters'">
           <header class="mb-4 flex items-center justify-between">
             <h2 class="text-[12px] font-medium text-shelf-text-soft">{{ query.trim() ? "搜索结果" : activeCharacterViewLabel }}</h2>
-            <span class="text-[10px] text-shelf-quiet">{{ filteredCharacters.length }}{{ query.trim() ? ` / ${characters.length}` : "" }}</span>
+            <span class="text-[10px] text-shelf-quiet">{{ filteredCharacters.length }}{{ query.trim() ? ` / ${shelf.length}` : "" }}</span>
           </header>
 
           <div v-if="filteredCharacters.length" class="grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-x-5 gap-y-8 max-[860px]:grid-cols-[repeat(auto-fill,minmax(145px,1fr))] max-[860px]:gap-x-3.5 max-[860px]:gap-y-6">
-            <LibraryCard v-for="character in filteredCharacters" :key="character.id" :character="character" @open="selectedID = $event.id" @favorite="toggleFavorite" />
+            <LibraryCard v-for="character in filteredCharacters" :key="character.id" :character="character" :related-count="membersOf(characters, character).length - 1" @open="selectedID = $event.id" @favorite="toggleFavorite" />
           </div>
 
           <div v-else class="grid min-h-[42vh] place-content-center justify-items-center gap-3 text-center text-shelf-muted">
@@ -580,6 +607,9 @@ onBeforeUnmount(() => {
   />
 
   <CharacterDetailDialog
+    :characters="characters"
+    @select="selectedID = $event"
+    @changed="loadLibrary(true)"
     :open="Boolean(selected)"
     :character="selected"
     :collections="collections"
@@ -608,6 +638,15 @@ onBeforeUnmount(() => {
     :target="transferTarget"
     @update:open="open => { if (!open) transferTarget = null; }"
   />
+
+  <div v-if="importAttention" role="status" class="fixed bottom-20 right-5 z-[75] w-[min(390px,calc(100vw-40px))] rounded-xl border border-shelf-line-strong bg-shelf-raised/95 p-4 text-[12px] shadow-2xl backdrop-blur">
+    <p class="leading-6">{{ importAttention.message }}</p>
+    <div class="mt-3 flex flex-wrap gap-3 text-[11px]">
+      <button type="button" class="text-amber-200" @click="selectedID = importAttention.id; importAttention = null">查看关联卡</button>
+      <button type="button" :disabled="revisionBusy" @click="splitImported">移出关联</button>
+      <button type="button" class="ml-auto text-shelf-muted" @click="importAttention = null">知道了</button>
+    </div>
+  </div>
 
   <Transition enter-active-class="transition duration-150" enter-from-class="translate-y-2 opacity-0" leave-active-class="transition duration-150" leave-to-class="translate-y-2 opacity-0">
     <div v-if="notice" role="status" class="fixed bottom-5 right-5 z-[80] flex max-w-[430px] items-center gap-2 rounded-lg border px-3.5 py-2.5 text-[11px] shadow-2xl" :class="notice.error ? 'border-red-400/25 bg-[#2a1919]/95 text-red-200' : 'border-shelf-line-strong bg-shelf-raised/95 text-shelf-text-soft'">

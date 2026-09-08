@@ -7,6 +7,11 @@ import (
 )
 
 type Character struct {
+	CoverHash      string           `json:"coverHash,omitempty"`
+	ContentHash    string           `json:"contentHash,omitempty"`
+	IdentityKey    string           `json:"-"`
+	GroupID        string           `json:"groupId"`
+	GroupReason    string           `json:"groupReason"`
 	ID             string           `json:"id"`
 	SourceHash     string           `json:"sourceHash,omitempty"`
 	Name           string           `json:"name"`

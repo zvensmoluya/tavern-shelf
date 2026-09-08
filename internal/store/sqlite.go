@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_collection_characters_character ON collection_cha
 	if _, err := s.db.ExecContext(ctx, "ALTER TABLE characters ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'"); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return fmt.Errorf("add content manifest column: %w", err)
 	}
-	return nil
+	return s.migrateAssociations(ctx)
 }
 
 func (s *Store) InboxDirectories(ctx context.Context) ([]string, error) {
@@ -164,20 +164,28 @@ func (s *Store) Create(ctx context.Context, character library.Character) error {
 id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive,
 source_format, source_is_image, source_filename, source_rel_path,
-source_size, imported_at, manifest_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = s.db.ExecContext(ctx, query,
+source_size, imported_at, manifest_json, content_hash, identity_key, group_id, group_reason, cover_hash
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin character import: %w", err)
+	}
+	defer tx.Rollback()
+	if err := assignGroup(ctx, tx, &character); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, query,
 		character.ID, character.SourceHash, character.Name, character.Creator,
 		character.Spec, character.SpecVersion, string(tags), character.HasWorldbook,
 		character.HasRegex, character.HasExtensions, character.HasInteractive,
 		character.SourceFormat, character.SourceIsImage, character.SourceFilename,
 		character.SourceRelPath, character.SourceSize, character.ImportedAt.UTC().Format(time.RFC3339Nano),
-		string(contentManifest),
+		string(contentManifest), character.ContentHash, character.IdentityKey, character.GroupID, character.GroupReason, character.CoverHash,
 	)
 	if err != nil {
 		return fmt.Errorf("insert character: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) CreateResource(ctx context.Context, resource library.Resource) error {
@@ -289,7 +297,7 @@ func (s *Store) List(ctx context.Context) ([]library.Character, error) {
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
- , manifest_json
+ , manifest_json, content_hash, identity_key, group_id, group_reason, cover_hash
 FROM characters ORDER BY imported_at DESC, name COLLATE NOCASE`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -314,7 +322,7 @@ func (s *Store) Get(ctx context.Context, id string) (library.Character, error) {
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
- , manifest_json
+ , manifest_json, content_hash, identity_key, group_id, group_reason, cover_hash
 FROM characters WHERE id = ?`
 	character, err := scanCharacter(s.db.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -327,7 +335,7 @@ func (s *Store) GetByHash(ctx context.Context, hash string) (library.Character, 
 	const query = `SELECT id, source_hash, name, creator, spec, spec_version, tags_json,
 has_worldbook, has_regex, has_extensions, has_interactive, source_format,
 source_is_image, source_filename, source_rel_path, source_size, imported_at
- , manifest_json
+ , manifest_json, content_hash, identity_key, group_id, group_reason, cover_hash
 FROM characters WHERE source_hash = ?`
 	character, err := scanCharacter(s.db.QueryRowContext(ctx, query, hash))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -433,7 +441,7 @@ func scanCharacter(row scanner) (library.Character, error) {
 		&character.ID, &character.SourceHash, &character.Name, &character.Creator,
 		&character.Spec, &character.SpecVersion, &tags, &worldbook, &regex,
 		&extensions, &interactive, &character.SourceFormat, &image,
-		&character.SourceFilename, &character.SourceRelPath, &character.SourceSize, &imported, &contentManifest,
+		&character.SourceFilename, &character.SourceRelPath, &character.SourceSize, &imported, &contentManifest, &character.ContentHash, &character.IdentityKey, &character.GroupID, &character.GroupReason, &character.CoverHash,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

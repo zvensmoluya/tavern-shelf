@@ -10,6 +10,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  changeAssociation: (id: string, action: string, target = "") => request<void>(`/api/characters/${encodeURIComponent(id)}/association`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, target }),
+  }),
   importURL: (url: string) => request<ImportResult>("/api/imports/url", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
   }),

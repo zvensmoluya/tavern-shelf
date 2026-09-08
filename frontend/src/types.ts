@@ -82,6 +82,10 @@ export interface Manifest {
 }
 
 export interface Character {
+  groupId?: string;
+  contentHash?: string;
+  coverHash?: string;
+  groupReason?: string;
   id: string;
   sourceHash?: string;
   name: string;

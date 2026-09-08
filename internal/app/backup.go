@@ -20,7 +20,7 @@ import (
 
 const (
 	backupFormat                = "tavern-shelf-backup"
-	backupVersion               = 2
+	backupVersion               = 3
 	MaxBackupSize         int64 = 64 << 30
 	maxBackupItemSize           = 4 << 30
 	maxBackupItems              = 100_000
@@ -31,6 +31,8 @@ const (
 var errBackupItemTooLarge = errors.New("backup item exceeds the 4 GiB limit")
 
 type BackupItem struct {
+	GroupID        string    `json:"groupId,omitempty"`
+	GroupReason    string    `json:"groupReason,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
 	SourceFilename string    `json:"sourceFilename"`
@@ -98,6 +100,7 @@ func (a *App) WriteBackup(ctx context.Context, destination io.Writer) (BackupSum
 			return BackupSummary{}, errors.New("refusing to back up an unexpected character source path")
 		}
 		item := BackupItem{
+			GroupID: character.GroupID, GroupReason: character.GroupReason,
 			Kind: "character", Name: character.Name, SourceFilename: character.SourceFilename,
 			SourceHash: character.SourceHash, ImportedAt: character.ImportedAt,
 			ArchivePath: backupSourcePath("character", character.SourceHash, path),
@@ -206,6 +209,18 @@ func (a *App) RestoreBackup(ctx context.Context, source io.Reader) (RestoreSumma
 		collectionIDs[backupCollection.ID] = collection.ID
 		existingCollections = append(existingCollections, collection)
 	}
+	// Map backup groups to existing groups when exact sources already exist;
+	// otherwise namespace them per restore so unrelated local groups cannot collide.
+	groups := map[string]string{}
+	namespace := fmt.Sprintf("restore-%d-", time.Now().UnixNano())
+	for _, item := range manifest.Items {
+		if item.Kind != "character" || item.GroupID == "" {
+			continue
+		}
+		if existing, err := a.Store.GetByHash(ctx, item.SourceHash); err == nil {
+			groups[item.GroupID] = existing.GroupID
+		}
+	}
 	summary := RestoreSummary{Total: len(manifest.Items)}
 	for _, item := range manifest.Items {
 		entry := sources[item.ArchivePath]
@@ -237,6 +252,17 @@ func (a *App) RestoreBackup(ctx context.Context, source io.Reader) (RestoreSumma
 			summary.Imported++
 			if !item.ImportedAt.IsZero() {
 				_ = a.Store.SetImportedAt(ctx, result.Kind, id, item.ImportedAt)
+			}
+		}
+		if item.Kind == "character" && !result.Duplicate && item.GroupID != "" {
+			group := groups[item.GroupID]
+			if group == "" {
+				digest := sha256.Sum256([]byte(namespace + item.GroupID))
+				group = hex.EncodeToString(digest[:])
+				groups[item.GroupID] = group
+			}
+			if err := a.Store.RestoreAssociation(ctx, id, group, item.GroupReason); err != nil {
+				summary.addIssue(item.SourceFilename, err)
 			}
 		}
 		if item.Kind == "character" && manifest.Version >= 2 {
@@ -314,7 +340,7 @@ func readBackupManifest(files []*zip.File) (BackupManifest, map[string]*zip.File
 	if err := decoder.Decode(&manifest); err != nil {
 		return BackupManifest{}, nil, fmt.Errorf("decode backup manifest: %w", err)
 	}
-	if manifest.Format != backupFormat || (manifest.Version != 1 && manifest.Version != backupVersion) {
+	if manifest.Format != backupFormat || (manifest.Version < 1 || manifest.Version > backupVersion) {
 		return BackupManifest{}, nil, errors.New("unsupported Tavern Shelf backup format or version")
 	}
 	if len(manifest.Items) > maxBackupItems {

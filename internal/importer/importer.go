@@ -147,6 +147,7 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 	result := Result{}
 	if isCharacter {
 		character := library.Character{
+			CoverHash: characterMetadata.CoverHash, ContentHash: characterMetadata.ContentHash, IdentityKey: characterMetadata.IdentityKey,
 			ID:             hash,
 			SourceHash:     hash,
 			Name:           characterMetadata.Name,
@@ -167,6 +168,11 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 			Manifest:       characterMetadata.Manifest,
 		}
 		if err := i.store.Create(ctx, character); err != nil {
+			return Result{}, err
+		}
+		committed = true // Metadata and immutable source are durable even if the following read fails.
+		character, err = i.store.Get(ctx, character.ID)
+		if err != nil {
 			return Result{}, err
 		}
 		result = Result{Character: character, Kind: "character", Name: character.Name}
