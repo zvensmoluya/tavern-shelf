@@ -13,7 +13,7 @@ import (
 	"github.com/zvensmoluya/tavern-shelf/internal/importer"
 )
 
-const MaxUploadSize int64 = 64 << 20
+const MaxUploadSize int64 = card.MaxSourceSize
 
 var ErrUploadTooLarge = errors.New("uploaded file exceeds the 64 MiB limit")
 

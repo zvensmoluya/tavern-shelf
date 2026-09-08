@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,9 +24,11 @@ var (
 	ErrInvalidPNG  = errors.New("invalid PNG character card")
 )
 
-const maxCardSize = 64 << 20
+const MaxSourceSize int64 = 64 << 20
+const maxCardSize = int(MaxSourceSize)
 
 type Character struct {
+	nameMissing    bool
 	Name           string           `json:"name"`
 	Creator        string           `json:"creator,omitempty"`
 	Spec           string           `json:"spec,omitempty"`
@@ -126,31 +129,42 @@ func Supported(path string) bool {
 }
 
 func ParseFile(path string) (Character, error) {
+	return ParseFileWithName(path, filepath.Base(path))
+}
+
+// ParseFileWithName keeps the original display filename when rebuilding a
+// manifest from a managed file whose storage name is always source.png/json.
+func ParseFileWithName(path, sourceName string) (Character, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Character{}, fmt.Errorf("open card: %w", err)
 	}
 	defer f.Close()
 
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".json":
-		raw, err := io.ReadAll(io.LimitReader(f, maxCardSize+1))
-		if err != nil {
-			return Character{}, fmt.Errorf("read JSON card: %w", err)
-		}
-		if len(raw) > maxCardSize {
-			return Character{}, errors.New("character card exceeds size limit")
-		}
-		return parseJSONBytes(raw, "json", false)
-	case ".png":
-		return ParsePNG(io.LimitReader(f, maxCardSize))
-	default:
+	if !Supported(path) {
 		return Character{}, ErrUnsupported
 	}
+	raw, err := readCardBytes(f)
+	if err != nil {
+		return Character{}, err
+	}
+	var result Character
+	if bytes.HasPrefix(raw, []byte("\x89PNG\r\n\x1a\n")) {
+		result, err = parsePNGBytes(raw)
+	} else {
+		result, err = parseJSONBytes(raw, "json", false)
+	}
+	if err == nil && result.nameMissing {
+		if name := strings.TrimSpace(strings.TrimSuffix(filepath.Base(sourceName), filepath.Ext(sourceName))); name != "" {
+			result.Name = name
+			result.Manifest.Character.Name = name
+		}
+	}
+	return result, err
 }
 
 func ParseJSON(r io.Reader) (Character, error) {
-	raw, err := io.ReadAll(r)
+	raw, err := readCardBytes(r)
 	if err != nil {
 		return Character{}, fmt.Errorf("read JSON card: %w", err)
 	}
@@ -158,26 +172,39 @@ func ParseJSON(r io.Reader) (Character, error) {
 }
 
 func parseJSONBytes(raw []byte, format string, image bool) (Character, error) {
+	raw = bytes.TrimPrefix(bytes.TrimSpace(raw), []byte{0xef, 0xbb, 0xbf})
+	warnings := []string{}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		if !image && !hasReadableCardSpec(raw) {
+			return Character{}, fmt.Errorf("decode character card JSON: %w", err)
+		}
+		warnings = append(warnings, "角色卡内容未能完整解析；原始文件已保留，可交给播放器处理。")
+	}
 	var env envelope
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return Character{}, fmt.Errorf("decode character card JSON: %w", err)
+	if fields != nil {
+		projectJSON(raw, &env, "", &warnings)
 	}
 	var data cardData
 	dataSource := raw
 	if len(bytes.TrimSpace(env.Data)) > 0 && !bytes.Equal(bytes.TrimSpace(env.Data), []byte("null")) {
 		dataSource = env.Data
 	}
-	if err := json.Unmarshal(dataSource, &data); err != nil {
-		return Character{}, fmt.Errorf("decode character card data: %w", err)
-	}
-	if strings.TrimSpace(data.Name) == "" {
-		return Character{}, errors.New("character card has no name")
-	}
-	if !image && !isCharacterEnvelope(env) && !hasLegacyCharacterFields(dataSource) {
+	if !image && !isCharacterEnvelope(env) && !hasReadableCardSpec(raw) && !hasLegacyCharacterFields(dataSource) {
 		return Character{}, fmt.Errorf("%w: named JSON does not contain character card fields", ErrUnsupported)
 	}
-	content := buildManifest(data, raw)
+	if fields != nil {
+		projectJSON(dataSource, &data, "data", &warnings)
+	}
+	nameMissing := strings.TrimSpace(data.Name) == ""
+	if nameMissing {
+		data.Name = "未命名角色卡"
+		warnings = append(warnings, "未能读取角色名称，使用文件名展示；原始文件已保留。")
+	}
+	content := buildManifest(data, raw, &warnings)
+	content.Warnings = warnings
 	return Character{
+		nameMissing:    nameMissing,
 		Name:           content.Character.Name,
 		Creator:        content.Character.Creator,
 		Spec:           strings.TrimSpace(env.Spec),
@@ -202,6 +229,9 @@ func hasLegacyCharacterFields(raw []byte) bool {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return false
 	}
+	if _, ok := fields["name"]; !ok {
+		return false
+	}
 	for _, key := range []string{
 		"description", "personality", "scenario", "first_mes", "mes_example",
 		"alternate_greetings", "character_book", "system_prompt", "post_history_instructions",
@@ -213,7 +243,7 @@ func hasLegacyCharacterFields(raw []byte) bool {
 	return false
 }
 
-func buildManifest(data cardData, raw []byte) manifest.Content {
+func buildManifest(data cardData, raw []byte, warnings *[]string) manifest.Content {
 	content := manifest.Content{
 		SchemaVersion: manifest.CurrentSchemaVersion,
 		Character: manifest.Character{
@@ -231,7 +261,7 @@ func buildManifest(data cardData, raw []byte) manifest.Content {
 			FirstMessage: strings.TrimSpace(data.FirstMessage), Alternate: cleanStrings(data.AlternateGreetings),
 			GroupOnly: cleanStrings(data.GroupOnlyGreetings),
 		},
-		RegexScripts: parseRegexScripts(data.Extensions),
+		RegexScripts: parseRegexScripts(data.Extensions, warnings),
 		Extensions:   extensionManifest(data.Extensions),
 		Assets:       assetManifest(data.Assets),
 		Sources:      cleanStrings(data.Sources),
@@ -280,17 +310,18 @@ func bookManifest(book characterBook) *manifest.CharacterBook {
 	return result
 }
 
-func parseRegexScripts(extensions map[string]json.RawMessage) []manifest.RegexScript {
+func parseRegexScripts(extensions map[string]json.RawMessage, warnings *[]string) []manifest.RegexScript {
 	raw, ok := extensions["regex_scripts"]
 	if !ok {
 		return []manifest.RegexScript{}
 	}
 	var scripts []regexScript
-	if err := json.Unmarshal(raw, &scripts); err != nil {
-		return []manifest.RegexScript{}
-	}
+	projectJSON(raw, &scripts, "data.extensions.regex_scripts", warnings)
 	result := make([]manifest.RegexScript, 0, len(scripts))
 	for index, script := range scripts {
+		if script.Placement == nil {
+			script.Placement = []int{}
+		}
 		name := strings.TrimSpace(firstNonEmpty(script.ScriptName, script.Name))
 		if name == "" {
 			name = fmt.Sprintf("Regex %d", index+1)
@@ -413,65 +444,121 @@ func uriKind(uri string) string {
 }
 
 func ParsePNG(r io.Reader) (Character, error) {
-	signature := make([]byte, 8)
-	if _, err := io.ReadFull(r, signature); err != nil || !bytes.Equal(signature, []byte("\x89PNG\r\n\x1a\n")) {
+	raw, err := readCardBytes(r)
+	if err != nil {
+		return Character{}, err
+	}
+	return parsePNGBytes(raw)
+}
+
+func parsePNGBytes(raw []byte) (Character, error) {
+	if len(raw) < 8 || !bytes.Equal(raw[:8], []byte("\x89PNG\r\n\x1a\n")) {
 		return Character{}, ErrInvalidPNG
 	}
-	payloads := make(map[string][]byte, 2)
-	for {
-		var length uint32
-		if err := binary.Read(r, binary.BigEndian, &length); err != nil {
-			return Character{}, fmt.Errorf("read PNG chunk length: %w", err)
+	payloads := make(map[string][][]byte, 2)
+	warnings := []string{}
+	hasImageData, ended := false, false
+	for position := 8; position < len(raw); {
+		if len(raw)-position < 12 {
+			warnings = append(warnings, "PNG 的尾部不完整；已保留原始文件。")
+			break
 		}
-		if length > maxCardSize {
-			return Character{}, fmt.Errorf("PNG chunk is too large: %d bytes", length)
+		length := uint64(binary.BigEndian.Uint32(raw[position:]))
+		if length > uint64(len(raw)-position-12) {
+			warnings = append(warnings, "PNG 的部分数据不完整；已保留原始文件。")
+			// A readable card keyword is still an identity signal in a truncated chunk.
+			kind := string(raw[position+4 : position+8])
+			if kind == "tEXt" || kind == "iTXt" || kind == "zTXt" {
+				key, _ := splitText(raw[position+8:])
+				key = strings.ToLower(key)
+				if key == "chara" || key == "ccv3" {
+					payloads[key] = append(payloads[key], nil)
+				}
+			}
+			break
 		}
-		kind := make([]byte, 4)
-		if _, err := io.ReadFull(r, kind); err != nil {
-			return Character{}, fmt.Errorf("read PNG chunk type: %w", err)
+		end := position + 8 + int(length)
+		kind := string(raw[position+4 : position+8])
+		data := raw[position+8 : end]
+		if crc32.ChecksumIEEE(raw[position+4:end]) != binary.BigEndian.Uint32(raw[end:]) && len(warnings) < 64 {
+			warnings = append(warnings, "PNG 的部分数据校验不一致；已保留原始文件。")
 		}
-		data := make([]byte, length)
-		if _, err := io.ReadFull(r, data); err != nil {
-			return Character{}, fmt.Errorf("read PNG chunk data: %w", err)
+		if kind == "IDAT" {
+			hasImageData = true
 		}
-		var storedCRC uint32
-		if err := binary.Read(r, binary.BigEndian, &storedCRC); err != nil {
-			return Character{}, fmt.Errorf("read PNG chunk checksum: %w", err)
+		if kind == "tEXt" || kind == "iTXt" || kind == "zTXt" {
+			keyword, payload := splitText(data)
+			keyword = strings.ToLower(keyword)
+			if keyword == "chara" || keyword == "ccv3" {
+				switch kind {
+				case "iTXt":
+					_, payload = splitInternationalText(data)
+				case "zTXt":
+					payload = inflateText(payload)
+				}
+				payloads[keyword] = append(payloads[keyword], payload)
+			}
 		}
-		checksum := crc32.NewIEEE()
-		_, _ = checksum.Write(kind)
-		_, _ = checksum.Write(data)
-		if checksum.Sum32() != storedCRC {
-			return Character{}, fmt.Errorf("%w: corrupt %s chunk", ErrInvalidPNG, kind)
-		}
-		var keyword string
-		var payload []byte
-		switch string(kind) {
-		case "tEXt":
-			keyword, payload = splitText(data)
-		case "iTXt":
-			keyword, payload = splitInternationalText(data)
-		}
-		keyword = strings.ToLower(keyword)
-		if (keyword == "chara" || keyword == "ccv3") && payloads[keyword] == nil {
-			payloads[keyword] = payload
-		}
-		if string(kind) == "IEND" {
+		position = end + 4
+		if kind == "IEND" {
+			ended = true
 			break
 		}
 	}
-	for _, keyword := range []string{"ccv3", "chara"} {
-		payload, ok := payloads[keyword]
-		if !ok {
-			continue
-		}
-		decoded, err := decodePayload(payload)
-		if err != nil {
-			return Character{}, err
-		}
-		return parseJSONBytes(decoded, "png", true)
+	if len(payloads) == 0 {
+		return Character{}, fmt.Errorf("%w: character metadata chunk not found", ErrInvalidPNG)
 	}
-	return Character{}, fmt.Errorf("%w: character metadata chunk not found", ErrInvalidPNG)
+	if !ended {
+		warnings = append(warnings, "PNG 缺少结束标记；已保留原始文件。")
+	}
+	var result Character
+	found := false
+	for _, keyword := range []string{"ccv3", "chara"} {
+		for _, payload := range payloads[keyword] {
+			decoded, err := decodePayload(payload)
+			if err != nil || !json.Valid(bytes.TrimPrefix(bytes.TrimSpace(decoded), []byte{0xef, 0xbb, 0xbf})) {
+				if len(warnings) < 64 {
+					warnings = append(warnings, "部分角色卡内容未能解析；原始文件已完整保留。")
+				}
+				continue
+			}
+			result, err = parseJSONBytes(decoded, "png", true)
+			if err == nil {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		result, _ = parseJSONBytes(nil, "png", true)
+	}
+	_, coverErr := png.DecodeConfig(bytes.NewReader(raw))
+	result.SourceIsImage = coverErr == nil && hasImageData
+	if !result.SourceIsImage {
+		warnings = append(warnings, "封面暂时无法显示；角色卡原始文件已保留。")
+	}
+	result.Manifest.Warnings = append(result.Manifest.Warnings, warnings...)
+	return result, nil
+}
+
+// zTXt uses a compression method byte followed by a zlib stream.
+func inflateText(data []byte) []byte {
+	if len(data) < 2 || data[0] != 0 {
+		return nil
+	}
+	reader, err := zlib.NewReader(bytes.NewReader(data[1:]))
+	if err != nil {
+		return nil
+	}
+	defer reader.Close()
+	decoded, err := readCardBytes(reader)
+	if err != nil {
+		return nil
+	}
+	return decoded
 }
 
 func splitText(data []byte) (string, []byte) {
@@ -512,7 +599,7 @@ func splitInternationalText(data []byte) (string, []byte) {
 		return "", nil
 	}
 	defer reader.Close()
-	decoded, err := io.ReadAll(io.LimitReader(reader, maxCardSize))
+	decoded, err := readCardBytes(reader)
 	if err != nil {
 		return "", nil
 	}

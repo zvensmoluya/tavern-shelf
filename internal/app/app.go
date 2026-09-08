@@ -404,7 +404,7 @@ func (a *App) backfillManifests(ctx context.Context) error {
 			a.logger.Warn("skip manifest migration for unsafe source path", "character", character.ID)
 			continue
 		}
-		parsed, err := card.ParseFile(path)
+		parsed, err := card.ParseFileWithName(path, character.SourceFilename)
 		if err != nil {
 			a.logger.Warn("could not rebuild character content manifest", "character", character.ID, "error", err)
 			continue

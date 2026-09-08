@@ -62,28 +62,40 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 	if !card.Supported(source) {
 		return Result{}, card.ErrUnsupported
 	}
+	// Identify and project the exact bytes that will become the managed source.
+	// Parsing a separately opened Inbox file can race with a subsequent copy.
+	stageDir, err := os.MkdirTemp(i.paths.Staging, "import-")
+	if err != nil {
+		return Result{}, fmt.Errorf("create import staging directory: %w", err)
+	}
+	defer os.RemoveAll(stageDir)
+	stageSource := filepath.Join(stageDir, filepath.Base(source))
+	hash, err := copyAndHash(source, stageSource)
+	if err != nil {
+		return Result{}, err
+	}
+	stagedInfo, err := os.Stat(stageSource)
+	if err != nil {
+		return Result{}, fmt.Errorf("inspect staged source: %w", err)
+	}
 	isJSON := strings.ToLower(filepath.Ext(source)) == ".json"
 	isCharacter := !isJSON
 	var characterMetadata card.Character
 	var resourceMetadata resourceparser.Parsed
 	if isJSON {
-		resourceMetadata, err = resourceparser.ParseFile(source)
+		resourceMetadata, err = resourceparser.ParseFile(stageSource)
 		if err != nil {
-			characterMetadata, err = card.ParseFile(source)
+			characterMetadata, err = card.ParseFile(stageSource)
 			if err != nil {
 				return Result{}, fmt.Errorf("parse Inbox JSON as character, worldbook, or preset: %w", err)
 			}
 			isCharacter = true
 		}
 	} else {
-		characterMetadata, err = card.ParseFile(source)
+		characterMetadata, err = card.ParseFile(stageSource)
 		if err != nil {
 			return Result{}, err
 		}
-	}
-	hash, err := hashFile(source)
-	if err != nil {
-		return Result{}, err
 	}
 	if existing, err := i.store.GetByHash(ctx, hash); err == nil {
 		if removeSource {
@@ -111,18 +123,13 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 	relSource := filepath.Join(relDir, "source"+ext)
 	finalDir := filepath.Join(i.paths.Library, relDir)
 	finalSource := filepath.Join(i.paths.Library, relSource)
-	stageDir, err := os.MkdirTemp(i.paths.Staging, "import-")
-	if err != nil {
-		return Result{}, fmt.Errorf("create import staging directory: %w", err)
-	}
-	defer os.RemoveAll(stageDir)
-	stageSource := filepath.Join(stageDir, "source"+ext)
-	stagedHash, err := copyAndHash(source, stageSource)
-	if err != nil {
-		return Result{}, err
-	}
-	if stagedHash != hash {
-		return Result{}, errors.New("inbox file changed while it was being imported")
+	// Give the immutable staged source its canonical managed filename only
+	// after parsing, so a missing character name can use the original filename.
+	if filepath.Base(stageSource) != "source"+ext {
+		canonicalStage := filepath.Join(stageDir, "source"+ext)
+		if err := os.Rename(stageSource, canonicalStage); err != nil {
+			return Result{}, fmt.Errorf("name staged source: %w", err)
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(finalDir), 0o755); err != nil {
 		return Result{}, fmt.Errorf("create library shard: %w", err)
@@ -155,7 +162,7 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 			SourceIsImage:  characterMetadata.SourceIsImage,
 			SourceFilename: filepath.Base(source),
 			SourceRelPath:  relSource,
-			SourceSize:     info.Size(),
+			SourceSize:     stagedInfo.Size(),
 			ImportedAt:     i.now().UTC(),
 			Manifest:       characterMetadata.Manifest,
 		}
@@ -168,7 +175,7 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 			ID: hash, SourceHash: hash, Kind: resourceMetadata.Kind, Subtype: resourceMetadata.Subtype,
 			Name: resourceMetadata.Name, Description: resourceMetadata.Description,
 			SourceFilename: filepath.Base(source), SourceRelPath: relSource,
-			SourceSize: info.Size(), ImportedAt: i.now().UTC(),
+			SourceSize: stagedInfo.Size(), ImportedAt: i.now().UTC(),
 			Worldbook: resourceMetadata.Worldbook, Preset: resourceMetadata.Preset,
 		}
 		if err := i.store.CreateResource(ctx, resource); err != nil {
@@ -177,15 +184,15 @@ func (i *Importer) importFrom(ctx context.Context, inbox, source string, removeS
 		result = Result{Resource: resource, Kind: resource.Kind, Name: resource.Name}
 	}
 	committed = true
-	if removeSource {
-		if err := os.Remove(source); err != nil {
-			// The managed copy and database row are complete. A later scan will identify
-			// this leftover as an exact duplicate and archive it safely.
-			return result, fmt.Errorf("remove imported inbox file: %w", err)
-		}
-	}
 	if _, err := os.Stat(finalSource); err != nil {
 		return result, fmt.Errorf("verify managed source: %w", err)
+	}
+	if removeSource {
+		if err := finishInboxSource(source, hash, i.paths.Duplicate); err != nil {
+			// The managed copy and database row are complete. A later scan will identify
+			// this leftover as an exact duplicate and archive it safely.
+			return result, fmt.Errorf("finish imported inbox file: %w", err)
+		}
 	}
 	return result, nil
 }
@@ -223,9 +230,12 @@ func copyAndHash(source, destination string) (string, error) {
 		return "", fmt.Errorf("create staged source: %w", err)
 	}
 	h := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(out, h), in)
+	written, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, card.MaxSourceSize+1))
 	syncErr := out.Sync()
 	closeErr := out.Close()
+	if written > card.MaxSourceSize {
+		return "", fmt.Errorf("source exceeds the %d MiB size limit", card.MaxSourceSize>>20)
+	}
 	if copyErr != nil {
 		return "", fmt.Errorf("copy source to staging: %w", copyErr)
 	}

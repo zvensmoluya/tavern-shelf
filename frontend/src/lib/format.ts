@@ -21,7 +21,8 @@ export function formatImported(value: string): string {
 
 export function formatCardDate(unixSeconds?: number): string {
   if (!unixSeconds) return "";
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(new Date(unixSeconds * 1000));
+  const date = new Date(unixSeconds * 1000);
+  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(date) : "";
 }
 
 export function manifestOf(character: Character): Manifest {

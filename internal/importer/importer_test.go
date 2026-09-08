@@ -47,6 +47,7 @@ func TestDuplicateIsArchivedWithoutCreatingAnotherCharacter(t *testing.T) {
 	if _, err := imp.Import(context.Background(), first); err != nil {
 		t.Fatal(err)
 	}
+	archivesBefore, _ := os.ReadDir(p.Duplicate)
 	duplicate := filepath.Join(p.Inbox, "again.json")
 	if err := os.WriteFile(duplicate, []byte(validCard), 0o644); err != nil {
 		t.Fatal(err)
@@ -63,7 +64,7 @@ func TestDuplicateIsArchivedWithoutCreatingAnotherCharacter(t *testing.T) {
 		t.Fatalf("duplicate created another row: %d", len(characters))
 	}
 	duplicates, err := os.ReadDir(p.Duplicate)
-	if err != nil || len(duplicates) != 1 {
+	if err != nil || len(duplicates) != len(archivesBefore)+1 {
 		t.Fatalf("duplicate was not archived: %v, %v", duplicates, err)
 	}
 }
@@ -110,6 +111,7 @@ func TestExternalDuplicateRemainsAtSource(t *testing.T) {
 	if _, err := imp.Import(context.Background(), managedSource); err != nil {
 		t.Fatal(err)
 	}
+	archivesBefore, _ := os.ReadDir(p.Duplicate)
 	external := t.TempDir()
 	duplicate := filepath.Join(external, "duplicate.json")
 	if err := os.WriteFile(duplicate, []byte(validCard), 0o644); err != nil {
@@ -123,7 +125,7 @@ func TestExternalDuplicateRemainsAtSource(t *testing.T) {
 		t.Fatalf("external duplicate was removed: %v", err)
 	}
 	duplicates, err := os.ReadDir(p.Duplicate)
-	if err != nil || len(duplicates) != 0 {
+	if err != nil || len(duplicates) != len(archivesBefore) {
 		t.Fatalf("external duplicate was archived: %v, %v", duplicates, err)
 	}
 }

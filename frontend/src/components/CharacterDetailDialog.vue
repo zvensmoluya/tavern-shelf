@@ -29,13 +29,14 @@ import {
   DialogTitle,
 } from "reka-ui";
 import CharacterBookPanel from "@/components/CharacterBookPanel.vue";
+import CharacterCover from "@/components/CharacterCover.vue";
 import StructuredDescription from "@/components/StructuredDescription.vue";
 import ContentSection from "@/components/ui/ContentSection.vue";
 import ExpandableText from "@/components/ui/ExpandableText.vue";
 import ShelfButton from "@/components/ui/ShelfButton.vue";
 import ShelfDisclosure from "@/components/ui/ShelfDisclosure.vue";
 import ShelfIconButton from "@/components/ui/ShelfIconButton.vue";
-import { characterTone, formatCardDate, formatImported, formatSize, initialOf, manifestOf } from "@/lib/format";
+import { characterTone, formatCardDate, formatImported, formatSize, manifestOf } from "@/lib/format";
 import type { Character, CharacterOrganization, Collection, RegexScript } from "@/types";
 
 const props = defineProps<{ open: boolean; character: Character | null; collections: Collection[]; deleting: boolean; savingOrganization: boolean }>();
@@ -114,8 +115,7 @@ function saveOrganization() {
         </DialogClose>
 
         <div class="relative min-h-0 overflow-hidden bg-shelf-raised max-[610px]:h-[48vh]">
-          <img v-if="character.avatarUrl" :src="character.avatarUrl" :alt="`${character.name} 的角色卡封面`" class="block size-full object-cover object-top">
-          <div v-else class="cover-fallback grid size-full place-items-center text-8xl font-light" aria-hidden="true">{{ initialOf(character.name) }}</div>
+          <CharacterCover :src="character.avatarUrl" :name="character.name" class="text-8xl font-light" />
           <div class="detail-cover-shade pointer-events-none absolute inset-0 max-[610px]:bg-gradient-to-t max-[610px]:from-shelf-surface max-[610px]:to-transparent" />
         </div>
 
@@ -139,6 +139,15 @@ function saveOrganization() {
                 <span class="text-[10px] text-shelf-muted">{{ label }}</span>
               </div>
             </div>
+
+            <ContentSection v-if="manifest.warnings?.length" title="读取提示" meta="原始角色卡已保留">
+              <p class="mb-3 text-[12px] leading-6 text-shelf-muted">部分内容无法完整展示，不影响保存或下载原始文件。是否能正常游玩由播放器判断。</p>
+              <ShelfDisclosure title="查看读取提示">
+                <ul class="shelf-scrollbar max-h-44 space-y-2 overflow-y-auto text-[11px] leading-5 text-shelf-muted">
+                  <li v-for="(warning, index) in manifest.warnings" :key="index" class="break-words">{{ warning }}</li>
+                </ul>
+              </ShelfDisclosure>
+            </ContentSection>
 
             <ContentSection title="我的收藏信息" meta="仅保存在 Shelf，不改写角色卡">
               <div class="rounded-xl border border-shelf-line bg-white/[.018] p-4">

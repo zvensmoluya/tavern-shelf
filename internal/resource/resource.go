@@ -81,6 +81,10 @@ func ParseJSON(raw []byte, fallbackName string) (Parsed, error) {
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return Parsed{}, fmt.Errorf("decode resource JSON: %w", err)
 	}
+	var spec string
+	if json.Unmarshal(object["spec"], &spec) == nil && strings.HasPrefix(strings.ToLower(strings.TrimSpace(spec)), "chara_card_") {
+		return Parsed{}, ErrUnsupported
+	}
 	if parsed, ok := parseWorldbook(raw, fallbackName); ok {
 		return parsed, nil
 	}

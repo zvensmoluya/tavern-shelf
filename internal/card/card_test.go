@@ -130,9 +130,10 @@ func TestParseJSONRejectsNamedAccountData(t *testing.T) {
 	}
 }
 
-func TestParseJSONRequiresName(t *testing.T) {
-	if _, err := ParseJSON(bytes.NewBufferString(`{"spec":"chara_card_v2","data":{}}`)); err == nil {
-		t.Fatal("expected nameless card to fail")
+func TestParseJSONPreservesNamelessCard(t *testing.T) {
+	parsed, err := ParseJSON(bytes.NewBufferString(`{"spec":"chara_card_v2","data":{}}`))
+	if err != nil || parsed.Name == "" || parsed.SourceIsImage || len(parsed.Manifest.Warnings) == 0 {
+		t.Fatalf("nameless card was not preserved with a display fallback: %#v, %v", parsed, err)
 	}
 }
 

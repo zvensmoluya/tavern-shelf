@@ -108,7 +108,9 @@ Tavern Shelf/
     └── duplicates/        完全相同的重复投递
 ```
 
-原始卡是角色内容的 source of truth，解析字段和派生 UI 数据都可以从 Source 重建。收藏、收藏夹和私人备注属于独立的用户整理元数据，不会写回原始卡，并会进入完整备份。导入时 Shelf 会先解析原文件，再把它复制到暂存目录并核对 SHA-256；只有托管副本和数据库记录都成功后，才会移除 Inbox 中的文件。解析失败或仍在写入的文件会留在 Inbox。
+原始卡是角色内容的 source of truth，解析字段和派生 UI 数据都可以从 Source 重建。收藏、收藏夹和私人备注属于独立的用户整理元数据，不会写回原始卡，并会进入完整备份。导入时 Shelf 先复制到暂存目录并计算 SHA-256，再识别和读取该副本；只有托管副本和数据库记录都成功后，才会处理 Inbox 原件。Windows 会锁定原件、核对内容后删除；其他平台会核对后移入应用数据的 duplicates 归档并保留，以避免删除并发写入的数据。无法识别或处理失败的文件会留在 Inbox。
+
+收录不代表可播放性校验通过。JSON 角色卡不需要封面；缺少名称时使用文件名。已能确定角色卡身份的文件，即使封面、可选字段或部分内容损坏，仍按原始字节保存，详情显示读取提示。普通图片和无法识别角色卡身份的 JSON 不会自动收录。单个源文件和解压后的元数据限制为 64 MiB，以限制读取资源消耗。
 
 Shelf 提供三种明确的来源模式：
 
@@ -122,7 +124,7 @@ Shelf 提供三种明确的来源模式：
 
 - SillyTavern JSON Character Card，包括常见 v1 和 v2 外层结构；
 - Character Card V2 / V3 的标准结构化内容，并优先读取 PNG 中的 `ccv3` 数据；
-- PNG `tEXt/chara`、`tEXt/ccv3` 元数据，以及未压缩或 zlib 压缩的 `iTXt` 元数据；
+- PNG `tEXt/chara`、`tEXt/ccv3` 元数据，以及 `zTXt`、未压缩或 zlib 压缩的 `iTXt` 元数据；
 - 可重建的 Content Manifest：角色设定、开场与 alternate/group greetings、Character Book entry、Regex script 匹配信息、extension/asset 类型，以及 HTML、JavaScript 和已知交互扩展的存在性；
 - 内容哈希去重，同名但内容不同的卡片不会互相覆盖；
 - 可持久化配置多个 Inbox，并在运行中立即添加或移除扫描目录；

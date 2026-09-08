@@ -125,7 +125,7 @@ func inspectTrashItem(id, directory string) (TrashItem, error) {
 		_ = json.Unmarshal(raw, &metadata)
 	}
 	if metadata.Kind == "" || metadata.Name == "" {
-		if parsed, parseErr := card.ParseFile(source); parseErr == nil {
+		if parsed, parseErr := card.ParseFileWithName(source, metadata.SourceFilename); parseErr == nil {
 			metadata.Kind, metadata.Name = "character", parsed.Name
 		} else if parsed, parseErr := resourceparser.ParseFile(source); parseErr == nil {
 			metadata.Kind, metadata.Name = parsed.Kind, parsed.Name

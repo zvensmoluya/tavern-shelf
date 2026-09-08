@@ -62,6 +62,7 @@ export interface RegexScript {
 }
 
 export interface Manifest {
+	warnings?: string[];
   schemaVersion: number;
   character: CharacterProfile;
   greetings: Greetings;

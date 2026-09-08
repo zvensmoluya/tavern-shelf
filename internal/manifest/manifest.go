@@ -1,10 +1,11 @@
 package manifest
 
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 // Content is a deterministic, display-oriented projection of a character
 // card. It never replaces the original source and can always be rebuilt.
 type Content struct {
+	Warnings      []string       `json:"warnings,omitempty"`
 	SchemaVersion int            `json:"schemaVersion"`
 	Character     Character      `json:"character"`
 	Greetings     Greetings      `json:"greetings"`

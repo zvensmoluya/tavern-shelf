@@ -7,6 +7,13 @@ import (
 	"github.com/zvensmoluya/tavern-shelf/internal/library"
 )
 
+func TestExplicitCardIdentityTakesPriority(t *testing.T) {
+	_, err := ParseJSON([]byte(`{"spec":"chara_card_v3","data":{"name":"Card"},"entries":[]}`), "fallback")
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("character card was classified as a standalone resource: %v", err)
+	}
+}
+
 func TestParseStandaloneSillyTavernWorldbook(t *testing.T) {
 	raw := []byte(`{"entries":{"1":{"uid":1,"key":["rain","storm"],"keysecondary":["weather"],"comment":"Rainfall","content":"It rains every evening.","constant":false,"selective":true,"order":90,"disable":false,"displayIndex":1},"0":{"uid":0,"key":["city"],"comment":"The City","content":"A city on a cliff.","constant":true,"order":100,"disable":true,"displayIndex":0}}}`)
 	parsed, err := ParseJSON(raw, "时雨的童话世界")
