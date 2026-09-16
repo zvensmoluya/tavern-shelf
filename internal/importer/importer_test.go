@@ -186,6 +186,80 @@ func TestImportPreset(t *testing.T) {
 	}
 }
 
+func TestImportBOMPresetPreservesSourceBytes(t *testing.T) {
+	for _, external := range []bool{false, true} {
+		name := "inbox"
+		if external {
+			name = "external"
+		}
+		t.Run(name, func(t *testing.T) {
+			imp, p, s := testImporter(t)
+			directory := p.Inbox
+			if external {
+				directory = t.TempDir()
+			}
+			importFile := func(source string) (Result, error) {
+				if external {
+					return imp.ImportFrom(context.Background(), directory, source)
+				}
+				return imp.Import(context.Background(), source)
+			}
+			raw := "\xef\xbb\xbf\r\n" + `{"prompts":[{"identifier":"main","content":"Write vividly."}],"prompt_order":[],"extensions":{"custom":true}}`
+			for index, filename := range []string{"Community.json", "Duplicate.json"} {
+				source := filepath.Join(directory, filename)
+				if err := os.WriteFile(source, []byte(raw), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				result, err := importFile(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.Kind != "preset" || result.Resource.Subtype != "openai" || result.Resource.Name != "Community" || result.Duplicate != (index > 0) {
+					t.Fatalf("unexpected BOM preset: %#v", result)
+				}
+				managed := filepath.Join(p.Library, result.Resource.SourceRelPath)
+				if saved, err := os.ReadFile(managed); err != nil || string(saved) != raw {
+					t.Fatalf("managed source bytes changed: %q, %v", saved, err)
+				}
+				if external {
+					if saved, err := os.ReadFile(source); err != nil || string(saved) != raw {
+						t.Fatalf("external source bytes changed: %q, %v", saved, err)
+					}
+				} else if _, err := os.Stat(source); !os.IsNotExist(err) {
+					t.Fatalf("committed source still in Inbox: %v", err)
+				}
+			}
+			resources, err := s.ListResources(context.Background(), "preset")
+			if err != nil || len(resources) != 1 {
+				t.Fatalf("preset deduplication failed: %#v, %v", resources, err)
+			}
+		})
+	}
+}
+
+func TestInvalidBOMResourceRemainsInInbox(t *testing.T) {
+	for _, raw := range []string{
+		"\xef\xbb\xbf" + `{"prompts":[],"prompt_order":`,
+		"\xef\xbb\xbf" + `{"theme":"dark"}`,
+	} {
+		imp, p, s := testImporter(t)
+		source := filepath.Join(p.Inbox, "unsupported.json")
+		if err := os.WriteFile(source, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := imp.Import(context.Background(), source); err == nil {
+			t.Fatal("expected invalid resource to fail")
+		}
+		if saved, err := os.ReadFile(source); err != nil || string(saved) != raw {
+			t.Fatalf("rejected source bytes changed: %q, %v", saved, err)
+		}
+		resources, err := s.ListResources(context.Background(), "")
+		if err != nil || len(resources) != 0 {
+			t.Fatalf("invalid resource entered Library: %#v, %v", resources, err)
+		}
+	}
+}
+
 func TestEmbeddedWorldbookRemainsPartOfCharacter(t *testing.T) {
 	imp, p, s := testImporter(t)
 	source := filepath.Join(p.Inbox, "mara-with-lore.json")

@@ -71,3 +71,33 @@ func TestUnknownJSONIsRejected(t *testing.T) {
 		t.Fatalf("unknown JSON should be rejected, got %v", err)
 	}
 }
+
+func TestParseJSONWithUTF8BOM(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		kind string
+	}{
+		{"preset", `{"prompts":[],"prompt_order":[]}`, library.ResourcePreset},
+		{"worldbook", `{"entries":[]}`, library.ResourceWorldbook},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseJSON([]byte("\xef\xbb\xbf\r\n"+test.raw), "Community resource")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Kind != test.kind || parsed.Name != "Community resource" {
+				t.Fatalf("unexpected BOM resource: %#v", parsed)
+			}
+		})
+	}
+	for _, raw := range []string{
+		`{"spec":"chara_card_v3","data":{"name":"Card"},"entries":[]}`,
+		`{"theme":"dark"}`,
+	} {
+		if _, err := ParseJSON([]byte("\xef\xbb\xbf"+raw), "fallback"); !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("BOM changed resource classification: %v", err)
+		}
+	}
+}

@@ -139,6 +139,7 @@ Discord 链接必须保留 `ex`、`is`、`hm` 等签名参数；媒体预览附�
 - 一次性目录扫描和窗口拖拽收藏，两者均采用复制语义并保留来源；
 - 独立分发的 SillyTavern 世界书 JSON，按文件名命名并展示条目、关键词、启用状态与正文；
 - SillyTavern 预设 JSON，识别 Chat Completion、Kobold、NovelAI、Text Generation、Context、Instruct、System Prompt 和 Reasoning 子类型；
+- 角色卡、世界书和预设 JSON 均支持 UTF-8 BOM；收录时保留原始文件字节；
 - 角色、世界书和预设使用各自独立的 Library 分类；角色卡内嵌世界书只保留在角色详情中，不会重复创建独立世界书；
 - 二维码传输只公布 RFC1918 私有 IPv4，优先物理局域网接口并降低 VPN、Hyper-V、WSL、Docker 等虚拟网卡优先级；
 - 媒体库卡片浏览、搜索、详情、原始卡导出和移入 Shelf Trash；支持收藏、私人备注，以及一个角色加入多个自定义收藏夹；

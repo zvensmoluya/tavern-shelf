@@ -77,6 +77,9 @@ func ParseFile(path string) (Parsed, error) {
 }
 
 func ParseJSON(raw []byte, fallbackName string) (Parsed, error) {
+	// Tolerate a UTF-8 BOM just as character parsing does. Only the parsing
+	// view changes; the importer hashes and stores the original source bytes.
+	raw = bytes.TrimPrefix(bytes.TrimSpace(raw), []byte{0xef, 0xbb, 0xbf})
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return Parsed{}, fmt.Errorf("decode resource JSON: %w", err)
