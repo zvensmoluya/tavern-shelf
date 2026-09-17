@@ -36,6 +36,8 @@ Windows 桌面入口额外提供系统托盘、关闭窗口后后台运行、单
 
 ## 安装 Windows 版
 
+当前版本为 **v0.2.0**，新增链接导入、关联卡叠放浏览，并启用 Q 版 Shelf Keeper 图标。完整变更与升级说明见 [v0.2.0 更新说明](docs/releases/v0.2.0.md)。
+
 1. 打开 [Releases](https://github.com/zvensmoluya/tavern-shelf/releases/latest)，下载 `TavernShelf-Setup-<version>.exe`。
 2. 运行安装器。它安装到当前用户目录，不需要管理员权限，也不会要求终端常驻。
 3. 启动 Tavern Shelf，把角色卡拖进窗口，或从工具面板打开 Inbox。
