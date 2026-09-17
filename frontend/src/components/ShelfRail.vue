@@ -9,7 +9,7 @@ const brandMarkURL = `${import.meta.env.BASE_URL}brand-mark.png`;
 
 <template>
   <aside class="sticky top-0 z-20 flex h-screen w-[76px] flex-col items-center border-r border-shelf-line bg-shelf-rail px-2 py-4 max-[610px]:fixed max-[610px]:inset-x-0 max-[610px]:bottom-0 max-[610px]:top-auto max-[610px]:h-16 max-[610px]:w-full max-[610px]:flex-row max-[610px]:border-r-0 max-[610px]:border-t max-[610px]:px-3 max-[610px]:py-2">
-    <img :src="brandMarkURL" alt="Tavern Shelf" class="mb-8 size-8 rounded-lg max-[610px]:hidden">
+    <img :src="brandMarkURL" alt="Tavern Shelf" class="mb-8 size-8 object-contain max-[610px]:hidden">
 
     <nav aria-label="主导航" class="space-y-1 max-[610px]:flex max-[610px]:space-x-1 max-[610px]:space-y-0">
       <button
